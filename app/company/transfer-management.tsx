@@ -159,7 +159,6 @@ export default function TransferManagement() {
 
   const loadOperators = async (compId: string) => {
     try {
-      // 1. Tüm operatörleri çek
       const { data: operatorsList, error: opsError } = await supabase
         .from('operators')
         .select('id, full_name')
@@ -172,7 +171,6 @@ export default function TransferManagement() {
         return;
       }
 
-      // 2. Bu operatörlere ait depoları çek
       const { data: warehousesList, error: whError } = await supabase
         .from('warehouses')
         .select('id, name, operator_id')
@@ -180,7 +178,6 @@ export default function TransferManagement() {
 
       if (whError) throw whError;
 
-      // 3. Operatörleri depolarıyla eşleştir
       const formattedOperators = operatorsList.map((op) => {
         const warehouse = warehousesList?.find(wh => wh.operator_id === op.id);
         return {
@@ -231,14 +228,17 @@ export default function TransferManagement() {
     let targetWarehouseId = operator.warehouse_id;
 
     try {
-      // Eğer operatörün deposu yoksa, transfer sırasında otomatik oluştur
+      // Eğer operatörün deposu yoksa oluştur
       if (!targetWarehouseId) {
+        // DİKKAT: warehouses.company_id, profiles.id (user id) referansı ister.
+        // Ancak elimizde şirket UUID'si var.
+        // Bu durumda operatör deposu oluştururken company_id olarak current user'ın ID'sini kullanıyoruz.
         const { data: newWh, error: whError } = await supabase
           .from('warehouses')
           .insert({
             name: `${operator.full_name} Deposu`,
             warehouse_type: 'operator',
-            company_id: user?.id, // DÜZELTME: Burada companyId yerine user.id (owner id) kullanıyoruz
+            company_id: user?.id, 
             operator_id: operator.id,
             location: 'Mobil',
             is_active: true
@@ -249,29 +249,43 @@ export default function TransferManagement() {
         if (whError) throw whError;
         targetWarehouseId = newWh.id;
         
-        // Listeyi güncelle
         setOperators(prev => prev.map(op => 
           op.id === operator.id ? { ...op, warehouse_id: newWh.id } : op
         ));
       }
 
-      const { error } = await supabase
+      // 1. ADIM: Transferi 'pending' (beklemede) olarak oluştur
+      // Bu adım kaydın oluşmasını sağlar ama henüz stok düşmez
+      const { data: transferData, error: insertError } = await supabase
         .from('warehouse_transfers')
         .insert({
           from_warehouse_id: mainWarehouseId,
           to_warehouse_id: targetWarehouseId,
           product_id: selectedProduct,
           quantity: qty,
-          status: 'approved',
+          status: 'pending',
           notes: notes || null,
           requested_by: user?.id,
+        })
+        .select('id')
+        .single();
+
+      if (insertError) throw insertError;
+
+      // 2. ADIM: Transferi 'approved' (onaylandı) durumuna çek
+      // Bu işlem veritabanındaki trigger'ı (tetikleyiciyi) çalıştırır ve stokları günceller
+      const { error: updateError } = await supabase
+        .from('warehouse_transfers')
+        .update({
+          status: 'approved',
           approved_by: user?.id,
           approved_at: new Date().toISOString(),
-        });
+        })
+        .eq('id', transferData.id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      Alert.alert('Başarılı', 'Transfer oluşturuldu ve operatör deposuna eklendi');
+      Alert.alert('Başarılı', 'Transfer oluşturuldu ve stoklar güncellendi');
       setModalVisible(false);
       resetForm();
       loadTransfers(mainWarehouseId);
@@ -282,7 +296,7 @@ export default function TransferManagement() {
       } else if (error.message?.includes('bulunamadı')) {
         Alert.alert('Ürün Yok', 'Ana depoda bu ürün bulunmuyor');
       } else {
-        Alert.alert('Hata', 'Transfer oluşturulurken bir hata oluştu: ' + error.message);
+        Alert.alert('Hata', 'Transfer işlemi başarısız: ' + error.message);
       }
     }
   };
@@ -300,7 +314,7 @@ export default function TransferManagement() {
 
       if (error) throw error;
 
-      Alert.alert('Başarılı', 'Transfer onaylandı');
+      Alert.alert('Başarılı', 'Transfer onaylandı ve stoklar güncellendi');
       loadTransfers(mainWarehouseId);
     } catch (error: any) {
       console.error('Approve error:', error);
@@ -539,7 +553,6 @@ export default function TransferManagement() {
                       ]}
                     >
                       {op.full_name}
-                      {!op.warehouse_id && " (Depo Oluşturulacak)"}
                     </Text>
                   </TouchableOpacity>
                 ))}
