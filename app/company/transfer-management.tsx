@@ -172,7 +172,7 @@ export default function TransferManagement() {
         return;
       }
 
-      // 2. Bu operatörlere ait depoları çek (Tip kısıtlaması olmadan)
+      // 2. Bu operatörlere ait depoları çek
       const { data: warehousesList, error: whError } = await supabase
         .from('warehouses')
         .select('id, name, operator_id')
@@ -180,7 +180,7 @@ export default function TransferManagement() {
 
       if (whError) throw whError;
 
-      // 3. Operatörleri depolarıyla eşleştir (Deposu olmayanları da göster)
+      // 3. Operatörleri depolarıyla eşleştir
       const formattedOperators = operatorsList.map((op) => {
         const warehouse = warehousesList?.find(wh => wh.operator_id === op.id);
         return {
@@ -238,7 +238,7 @@ export default function TransferManagement() {
           .insert({
             name: `${operator.full_name} Deposu`,
             warehouse_type: 'operator',
-            company_id: companyId,
+            company_id: user?.id, // DÜZELTME: Burada companyId yerine user.id (owner id) kullanıyoruz
             operator_id: operator.id,
             location: 'Mobil',
             is_active: true
@@ -249,7 +249,7 @@ export default function TransferManagement() {
         if (whError) throw whError;
         targetWarehouseId = newWh.id;
         
-        // Yerel listeyi güncelle ki bir sonraki işlemde tekrar oluşturmaya çalışmasın
+        // Listeyi güncelle
         setOperators(prev => prev.map(op => 
           op.id === operator.id ? { ...op, warehouse_id: newWh.id } : op
         ));
@@ -282,7 +282,7 @@ export default function TransferManagement() {
       } else if (error.message?.includes('bulunamadı')) {
         Alert.alert('Ürün Yok', 'Ana depoda bu ürün bulunmuyor');
       } else {
-        Alert.alert('Hata', error.message);
+        Alert.alert('Hata', 'Transfer oluşturulurken bir hata oluştu: ' + error.message);
       }
     }
   };
