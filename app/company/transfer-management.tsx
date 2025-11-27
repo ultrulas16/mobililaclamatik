@@ -159,6 +159,7 @@ export default function TransferManagement() {
 
   const loadOperators = async (compId: string) => {
     try {
+      // 1. Tüm operatörleri çek
       const { data: operatorsList, error: opsError } = await supabase
         .from('operators')
         .select('id, full_name')
@@ -171,25 +172,24 @@ export default function TransferManagement() {
         return;
       }
 
+      // 2. Bu operatörlere ait depoları çek (Tip kısıtlaması olmadan)
       const { data: warehousesList, error: whError } = await supabase
         .from('warehouses')
         .select('id, name, operator_id')
-        .in('operator_id', operatorsList.map(op => op.id))
-        .eq('warehouse_type', 'operator');
+        .in('operator_id', operatorsList.map(op => op.id));
 
       if (whError) throw whError;
 
-      const formattedOperators = operatorsList
-        .map((op) => {
-          const warehouse = warehousesList?.find(wh => wh.operator_id === op.id);
-          return {
-            id: op.id,
-            full_name: op.full_name,
-            warehouse_id: warehouse?.id,
-            warehouse_name: warehouse?.name,
-          };
-        })
-        .filter(op => op.warehouse_id);
+      // 3. Operatörleri depolarıyla eşleştir (Deposu olmayanları da göster)
+      const formattedOperators = operatorsList.map((op) => {
+        const warehouse = warehousesList?.find(wh => wh.operator_id === op.id);
+        return {
+          id: op.id,
+          full_name: op.full_name,
+          warehouse_id: warehouse?.id,
+          warehouse_name: warehouse?.name,
+        };
+      });
 
       setOperators(formattedOperators);
     } catch (error: any) {
@@ -226,17 +226,40 @@ export default function TransferManagement() {
     }
 
     const operator = operators.find(op => op.id === selectedOperator);
-    if (!operator?.warehouse_id) {
-      Alert.alert('Hata', 'Operatör deposu bulunamadı');
-      return;
-    }
+    if (!operator) return;
+
+    let targetWarehouseId = operator.warehouse_id;
 
     try {
+      // Eğer operatörün deposu yoksa, transfer sırasında otomatik oluştur
+      if (!targetWarehouseId) {
+        const { data: newWh, error: whError } = await supabase
+          .from('warehouses')
+          .insert({
+            name: `${operator.full_name} Deposu`,
+            warehouse_type: 'operator',
+            company_id: companyId,
+            operator_id: operator.id,
+            location: 'Mobil',
+            is_active: true
+          })
+          .select('id')
+          .single();
+        
+        if (whError) throw whError;
+        targetWarehouseId = newWh.id;
+        
+        // Yerel listeyi güncelle ki bir sonraki işlemde tekrar oluşturmaya çalışmasın
+        setOperators(prev => prev.map(op => 
+          op.id === operator.id ? { ...op, warehouse_id: newWh.id } : op
+        ));
+      }
+
       const { error } = await supabase
         .from('warehouse_transfers')
         .insert({
           from_warehouse_id: mainWarehouseId,
-          to_warehouse_id: operator.warehouse_id,
+          to_warehouse_id: targetWarehouseId,
           product_id: selectedProduct,
           quantity: qty,
           status: 'approved',
@@ -516,6 +539,7 @@ export default function TransferManagement() {
                       ]}
                     >
                       {op.full_name}
+                      {!op.warehouse_id && " (Depo Oluşturulacak)"}
                     </Text>
                   </TouchableOpacity>
                 ))}
