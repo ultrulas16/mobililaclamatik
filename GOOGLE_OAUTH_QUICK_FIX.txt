@@ -1,0 +1,43 @@
+==========================================
+GOOGLE OAUTH KAYIT SORUNU - HIZLI ÇÖZÜM
+==========================================
+
+SORUN: Google ile kayıt olan kullanıcılar sisteme kaydedilmiyor.
+
+ÇÖZÜM: Supabase'de trigger eksik veya çalışmıyor. Aşağıdaki adımları takip edin:
+
+1. SUPABASE DASHBOARD'A GİRİN
+   https://supabase.com/dashboard
+   Proje: 0ec90b57d6e95fcbda19832f
+
+2. SQL EDITOR'Ü AÇIN
+   Sol menüden "SQL Editor" > "New Query"
+
+3. OAUTH_TRIGGER_FIX.SQL DOSYASINI ÇALIŞTIRIN
+   - Bu dosyayı açın
+   - Tüm içeriği kopyalayın
+   - SQL Editor'e yapıştırın
+   - "RUN" butonuna basın
+
+4. DOĞRULAMA
+   SQL Editor'de şu sorguyu çalıştırın:
+
+   SELECT * FROM pg_trigger WHERE tgname = 'on_auth_user_created_oauth';
+
+   Eğer sonuç dönüyorsa trigger yüklendi demektir.
+
+5. TEST EDİN
+   - Kayıt sayfasına gidin
+   - Gizlilik ve kullanım şartlarını kabul edin
+   - "Google ile Kayıt Ol" butonuna tıklayın
+   - Google hesabınızla giriş yapın
+   - Birkaç saniye bekleyin
+   - Company dashboard'una yönlendirileceksiniz
+
+MEVCUT KULLANICILARI DÜZELTMEk İÇİN:
+OAUTH_TRIGGER_FIX.sql dosyasının en altında mevcut OAuth kullanıcıları için profil oluşturma scripti var.
+
+DETAYLI REhBER:
+GOOGLE_OAUTH_FIX_GUIDE.md dosyasını okuyun.
+
+==========================================
