@@ -46,16 +46,9 @@ export default function TransferRequest() {
       setLoading(true);
 
       if (!profile?.id) {
-        console.error('Profile not loaded yet!');
-        Alert.alert('Hata', 'Profil yükleniyor, lütfen bekleyin...');
         setLoading(false);
         return;
       }
-
-      console.log('=== TRANSFER REQUEST DEBUG START ===');
-      console.log('Auth User ID:', user?.id);
-      console.log('Profile ID:', profile?.id);
-      console.log('Profile Role:', profile?.role);
 
       // Operatör bilgilerini çek
       const { data: operator, error: opError } = await supabase
@@ -64,21 +57,14 @@ export default function TransferRequest() {
         .eq('profile_id', profile?.id)
         .maybeSingle();
 
-      console.log('Operator query result:', { operator, opError });
-
-      if (opError) {
-        console.error('Operator query error:', opError);
-        throw opError;
-      }
+      if (opError) throw opError;
       
       if (!operator) {
-        console.error('NO OPERATOR DATA FOUND');
         Alert.alert('Hata', 'Operatör bilgisi bulunamadı');
         setLoading(false);
         return;
       }
 
-      console.log('Found operator:', operator);
       setOperatorData(operator);
 
       // Operatör deposunu çek
@@ -88,27 +74,19 @@ export default function TransferRequest() {
         .eq('operator_id', operator.id)
         .maybeSingle();
 
-      if (opWarehouseError) {
-        console.error('Operator warehouse error:', opWarehouseError);
-        throw opWarehouseError;
-      }
+      if (opWarehouseError) throw opWarehouseError;
       setOperatorWarehouse(opWarehouse);
-      console.log('Operator warehouse:', opWarehouse);
 
-      // Ana depoyu çek
+      // Ana depoyu çek (DÜZELTME: admin_warehouses tablosundan çekilmeli)
       const { data: mainWh, error: mainWhError } = await supabase
-        .from('warehouses')
+        .from('admin_warehouses')
         .select('*')
         .eq('company_id', operator.company_id)
-        .eq('warehouse_type', 'main')
+        .eq('is_active', true)
         .maybeSingle();
 
-      if (mainWhError) {
-        console.error('Main warehouse error:', mainWhError);
-        throw mainWhError;
-      }
+      if (mainWhError) throw mainWhError;
       setMainWarehouse(mainWh);
-      console.log('Main warehouse:', mainWh);
 
       // Transferleri çek
       if (opWarehouse) {
@@ -117,18 +95,20 @@ export default function TransferRequest() {
           .select(`
             *,
             product:company_materials(*),
-            from_warehouse:warehouses!from_warehouse_id(name),
             to_warehouse:warehouses!to_warehouse_id(name)
           `)
           .eq('to_warehouse_id', opWarehouse.id)
           .order('created_at', { ascending: false });
 
-        if (transfersError) {
-          console.error('Transfers error:', transfersError);
-          throw transfersError;
-        }
-        setTransfers(transfersData || []);
-        console.log('Transfers loaded:', transfersData?.length || 0);
+        if (transfersError) throw transfersError;
+        
+        // Manuel olarak from_warehouse adını ekleyelim (çünkü farklı tablolardan gelebilir)
+        const formattedTransfers = transfersData?.map(t => ({
+          ...t,
+          from_warehouse: { name: mainWh?.id === t.from_warehouse_id ? mainWh.name : 'Bilinmeyen Depo' }
+        }));
+
+        setTransfers(formattedTransfers || []);
       }
 
       // Ürünleri çek
@@ -144,18 +124,6 @@ export default function TransferRequest() {
 
   const loadProducts = async (companyId: string) => {
     try {
-      console.log('=== LOADING PRODUCTS ===');
-      console.log('Company ID:', companyId);
-
-      // Auth durumunu kontrol et
-      const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
-      console.log('Current auth user:', currentUser?.id);
-      if (authError) {
-        console.error('Auth error:', authError);
-        throw authError;
-      }
-
-      // Ürünleri çek
       const { data: productsData, error: productsError } = await supabase
         .from('company_materials')
         .select('*')
@@ -163,95 +131,76 @@ export default function TransferRequest() {
         .eq('is_active', true)
         .order('name');
 
-      console.log('Products query result:', {
-        count: productsData?.length || 0,
-        error: productsError,
-        data: productsData
-      });
-
-      if (productsError) {
-        console.error('Products error details:', JSON.stringify(productsError, null, 2));
-        
-        // RLS hatası kontrolü
-        if (productsError.code === 'PGRST301' || productsError.message?.includes('policy')) {
-          Alert.alert(
-            'Yetki Hatası', 
-            'Ürünleri görüntüleme yetkiniz yok. Lütfen sistem yöneticinizle iletişime geçin.'
-          );
-        }
-        throw productsError;
-      }
-
-      console.log('Products loaded successfully:', productsData?.length || 0);
+      if (productsError) throw productsError;
       setProducts(productsData || []);
-      
-      return productsData || [];
     } catch (error: any) {
       console.error('LoadProducts error:', error);
-      throw error;
     }
   };
 
   const handleRequestTransfer = async () => {
-    console.log('=== HANDLE REQUEST TRANSFER ===');
-    console.log('Selected product:', selectedProduct);
-    console.log('Quantity:', quantity);
-    console.log('Main warehouse:', mainWarehouse);
-    console.log('Operator warehouse:', operatorWarehouse);
-    console.log('Profile:', profile);
-
     if (!selectedProduct || !quantity) {
-      console.error('Missing product or quantity');
       Alert.alert('Hata', 'Lütfen ürün ve miktar seçin');
       return;
     }
 
-    if (!mainWarehouse || !operatorWarehouse) {
-      console.error('Missing warehouses:', { mainWarehouse, operatorWarehouse });
-      Alert.alert('Hata', 'Depo bilgileri bulunamadı');
+    if (!mainWarehouse) {
+      Alert.alert('Hata', 'Ana depo bulunamadı. Lütfen yöneticinizle görüşün.');
       return;
     }
 
+    let targetWarehouseId = operatorWarehouse?.id;
+
     try {
+      // Eğer operatörün deposu yoksa oluştur
+      if (!targetWarehouseId) {
+        const { data: newWh, error: whError } = await supabase
+          .from('warehouses')
+          .insert({
+            name: `${profile?.full_name} Deposu`,
+            warehouse_type: 'operator',
+            company_id: operatorData.company_id,
+            operator_id: operatorData.id,
+            location: 'Mobil',
+            is_active: true
+          })
+          .select('id')
+          .single();
+        
+        if (whError) throw whError;
+        targetWarehouseId = newWh.id;
+        setOperatorWarehouse({ id: newWh.id });
+      }
+
       const qty = parseFloat(quantity);
       if (isNaN(qty) || qty <= 0) {
-        console.error('Invalid quantity:', quantity);
         Alert.alert('Hata', 'Geçerli bir miktar girin');
         return;
       }
 
       const transferData = {
         from_warehouse_id: mainWarehouse.id,
-        to_warehouse_id: operatorWarehouse.id,
+        to_warehouse_id: targetWarehouseId,
         product_id: selectedProduct,
         quantity: qty,
         status: 'pending',
-        notes,
-        requested_by: profile?.id,
+        notes: notes,
+        requested_by: user?.id, // Profil ID yerine Auth User ID (Policy buna bakıyor)
       };
 
-      console.log('Inserting transfer:', transferData);
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('warehouse_transfers')
-        .insert([transferData])
-        .select();
+        .insert([transferData]);
 
-      console.log('Insert result:', { data, error });
+      if (error) throw error;
 
-      if (error) {
-        console.error('Insert error:', JSON.stringify(error, null, 2));
-        throw error;
-      }
-
-      console.log('Transfer created successfully:', data);
       Alert.alert('Başarılı', 'Transfer talebi oluşturuldu');
       setModalVisible(false);
       resetForm();
       await loadData();
     } catch (error: any) {
       console.error('Transfer request error:', error);
-      Alert.alert('Hata', error.message);
+      Alert.alert('Hata', 'Talep oluşturulamadı: ' + error.message);
     }
   };
 
@@ -261,64 +210,33 @@ export default function TransferRequest() {
     setNotes('');
   };
 
-  const handleOpenModal = async () => {
-    console.log('=== OPENING MODAL ===');
-    console.log('Current products count:', products.length);
-    
-    // Ürünler boşsa veya eskiyse yeniden yükle
-    if (products.length === 0 && operatorData?.company_id) {
-      console.log('Products empty, reloading...');
-      try {
-        await loadProducts(operatorData.company_id);
-        console.log('Products reloaded:', products.length);
-      } catch (error) {
-        console.error('Error reloading products:', error);
-      }
-    }
-    
-    setModalVisible(true);
-  };
-
-  const getStatusIcon = (status: string) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return <Clock size={20} color="#ff9800" />;
+      case 'pending': return '#ff9800';
       case 'approved':
-      case 'completed':
-        return <CheckCircle size={20} color="#4caf50" />;
-      case 'rejected':
-        return <XCircle size={20} color="#ef4444" />;
-      default:
-        return <Clock size={20} color="#999" />;
+      case 'completed': return '#4caf50';
+      case 'rejected': return '#ef4444';
+      default: return '#999';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'Beklemede';
-      case 'approved':
-        return 'Onaylandı';
-      case 'completed':
-        return 'Tamamlandı';
-      case 'rejected':
-        return 'Reddedildi';
-      default:
-        return status;
+      case 'pending': return 'Beklemede';
+      case 'approved': return 'Onaylandı';
+      case 'completed': return 'Tamamlandı';
+      case 'rejected': return 'Reddedildi';
+      default: return status;
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'pending':
-        return '#ff9800';
+      case 'pending': return <Clock size={20} color="#fff" />;
       case 'approved':
-      case 'completed':
-        return '#4caf50';
-      case 'rejected':
-        return '#ef4444';
-      default:
-        return '#999';
+      case 'completed': return <CheckCircle size={20} color="#fff" />;
+      case 'rejected': return <XCircle size={20} color="#fff" />;
+      default: return <Clock size={20} color="#fff" />;
     }
   };
 
@@ -327,16 +245,6 @@ export default function TransferRequest() {
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
           <Text>Yükleniyor...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text>Profil yükleniyor...</Text>
         </View>
       </View>
     );
@@ -351,7 +259,7 @@ export default function TransferRequest() {
         <Text style={styles.headerTitle}>Transfer Talepleri</Text>
         <TouchableOpacity
           style={styles.addButton}
-          onPress={handleOpenModal}
+          onPress={() => setModalVisible(true)}
         >
           <Plus size={24} color="#fff" />
         </TouchableOpacity>
@@ -364,7 +272,7 @@ export default function TransferRequest() {
               <View style={styles.transferInfo}>
                 <Text style={styles.productName}>{transfer.product?.name}</Text>
                 <Text style={styles.transferDate}>
-                  {new Date(transfer.transfer_date).toLocaleDateString('tr-TR')}
+                  {new Date(transfer.created_at).toLocaleDateString('tr-TR')}
                 </Text>
               </View>
               <View style={[styles.statusBadge, { backgroundColor: getStatusColor(transfer.status) }]}>
@@ -382,11 +290,7 @@ export default function TransferRequest() {
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Kaynak:</Text>
-                <Text style={styles.detailValue}>{transfer.from_warehouse?.name}</Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Hedef:</Text>
-                <Text style={styles.detailValue}>{transfer.to_warehouse?.name}</Text>
+                <Text style={styles.detailValue}>{transfer.from_warehouse?.name || 'Ana Depo'}</Text>
               </View>
               {transfer.notes && (
                 <View style={styles.notesContainer}>
@@ -431,10 +335,6 @@ export default function TransferRequest() {
                   <View style={{ padding: 16, alignItems: 'center', backgroundColor: '#fff3cd', borderRadius: 8, marginBottom: 12 }}>
                     <Text style={{ color: '#856404', fontSize: 14, textAlign: 'center' }}>
                       ⚠️ Hiç malzeme bulunamadı.
-                      {'\n'}
-                      Lütfen firma tanımlamalarından malzeme ekleyin veya
-                      {'\n'}
-                      yöneticinizle iletişime geçin.
                     </Text>
                   </View>
                 ) : (
