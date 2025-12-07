@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Calendar, User, MapPin, Clock, FileText, Package, AlertCircle, X, ChevronLeft, ChevronRight, Search, ChevronDown, ChevronUp, Filter } from 'lucide-react-native';
+import { ArrowLeft, Calendar, User, MapPin, Clock, FileText, Package, AlertCircle, X, ChevronLeft, ChevronRight, Search, ChevronDown, ChevronUp, Filter, Eye, Building } from 'lucide-react-native';
 import { Visit } from '@/types/visits';
 
 export default function CompanyVisits() {
@@ -40,6 +40,8 @@ export default function CompanyVisits() {
   const [operators, setOperators] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedVisitDetails, setSelectedVisitDetails] = useState<any>(null);
   const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
@@ -310,6 +312,23 @@ export default function CompanyVisits() {
       default:
         return level;
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString(locale, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const filteredByStatus = visits.filter(visit => {
@@ -591,8 +610,7 @@ export default function CompanyVisits() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color="#fff" />
         </TouchableOpacity>
-        {/* Çeviri kullanıldı: visitsReports */}
-        <Text style={styles.headerTitle}>{t('visitsReports')}</Text> 
+        <Text style={styles.headerTitle}>Ziyaretler ve Raporlar</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -606,6 +624,21 @@ export default function CompanyVisits() {
         <TouchableOpacity onPress={() => changeMonth('next')} style={styles.monthButton}>
           <ChevronRight size={24} color="#4caf50" />
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{totalCount}</Text>
+          <Text style={styles.statLabel}>Toplam</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{completedCount}</Text>
+          <Text style={styles.statLabel}>Tamamlanan</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{allVisits.filter(v => v.is_invoiced).length}</Text>
+          <Text style={styles.statLabel}>Faturalandı</Text>
+        </View>
       </View>
 
       <View style={styles.viewModeContainer}>
@@ -1130,6 +1163,19 @@ export default function CompanyVisits() {
                     )}
                   </>
                 )}
+
+                {visit.status === 'completed' && (
+                  <TouchableOpacity
+                    style={styles.viewDetailButton}
+                    onPress={() => {
+                      setSelectedVisitDetails(visit);
+                      setShowDetailsModal(true);
+                    }}
+                  >
+                    <Eye size={14} color="#2196f3" />
+                    <Text style={styles.viewDetailButtonText}>Tüm Detayları Görüntüle</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             );
             })
@@ -1283,6 +1329,204 @@ export default function CompanyVisits() {
               )}
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showDetailsModal} animationType="slide" transparent={false}>
+        <View style={styles.detailModalContainer}>
+          <View style={styles.detailModalHeader}>
+            <TouchableOpacity onPress={() => setShowDetailsModal(false)} style={styles.modalBackButton}>
+              <ArrowLeft size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.detailModalTitle}>Ziyaret Detayları</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          <ScrollView style={styles.detailModalContent} showsVerticalScrollIndicator={false}>
+            {selectedVisitDetails && (
+              <>
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailSectionTitle}>Genel Bilgiler</Text>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabelModal}>Tarih:</Text>
+                    <Text style={styles.detailValueModal}>
+                      {formatDate(selectedVisitDetails.visit_date)} {formatTime(selectedVisitDetails.visit_date)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabelModal}>Müşteri:</Text>
+                    <Text style={styles.detailValueModal}>
+                      {selectedVisitDetails.customer?.company_name || t('unknown')}
+                    </Text>
+                  </View>
+
+                  {selectedVisitDetails.branch && (
+                    <>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabelModal}>Şube:</Text>
+                        <Text style={styles.detailValueModal}>{selectedVisitDetails.branch.branch_name}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabelModal}>Adres:</Text>
+                        <Text style={styles.detailValueModal}>{selectedVisitDetails.branch.address}</Text>
+                      </View>
+                    </>
+                  )}
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabelModal}>Operatör:</Text>
+                    <Text style={styles.detailValueModal}>
+                      {selectedVisitDetails.operator?.full_name || t('unknown')}
+                    </Text>
+                  </View>
+
+                  {selectedVisitDetails.operator?.email && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Operatör Email:</Text>
+                      <Text style={styles.detailValueModal}>{selectedVisitDetails.operator.email}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabelModal}>Durum:</Text>
+                    <Text style={[styles.detailValueModal, { color: getStatusColor(selectedVisitDetails.status) }]}>
+                      {getStatusText(selectedVisitDetails.status)}
+                    </Text>
+                  </View>
+
+                  {selectedVisitDetails.report_number && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Rapor Numarası:</Text>
+                      <Text style={styles.detailValueModal}>{selectedVisitDetails.report_number}</Text>
+                    </View>
+                  )}
+
+                  {selectedVisitDetails.is_invoiced && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Fatura Durumu:</Text>
+                      <Text style={[styles.detailValueModal, { color: '#4caf50' }]}>Faturalandı</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.detailSection}>
+                  <Text style={styles.detailSectionTitle}>Ziyaret Detayları</Text>
+
+                  {selectedVisitDetails.visit_type && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Ziyaret Türü:</Text>
+                      <Text style={styles.detailValueModal}>{selectedVisitDetails.visit_type}</Text>
+                    </View>
+                  )}
+
+                  {selectedVisitDetails.pest_types && selectedVisitDetails.pest_types.length > 0 && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Hedef Zararlılar:</Text>
+                      <Text style={styles.detailValueModal}>{selectedVisitDetails.pest_types.join(', ')}</Text>
+                    </View>
+                  )}
+
+                  {selectedVisitDetails.density_level && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Yoğunluk Seviyesi:</Text>
+                      <Text style={styles.detailValueModal}>{getDensityText(selectedVisitDetails.density_level)}</Text>
+                    </View>
+                  )}
+
+                  {selectedVisitDetails.start_time && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Başlangıç Saati:</Text>
+                      <Text style={styles.detailValueModal}>{selectedVisitDetails.start_time}</Text>
+                    </View>
+                  )}
+
+                  {selectedVisitDetails.end_time && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabelModal}>Bitiş Saati:</Text>
+                      <Text style={styles.detailValueModal}>{selectedVisitDetails.end_time}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {selectedVisitDetails.equipment_checks && Object.keys(selectedVisitDetails.equipment_checks).length > 0 && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Ekipman Kontrolleri</Text>
+                    {Object.entries(selectedVisitDetails.equipment_checks).map(([equipmentId, checks]) => (
+                      <View key={equipmentId} style={styles.equipmentCheckCard}>
+                        <Text style={styles.equipmentTitle}>Ekipman {equipmentId}</Text>
+                        {Object.entries(checks as Record<string, any>).map(([property, value]) => (
+                          <View key={property} style={styles.checkRow}>
+                            <Text style={styles.checkLabel}>{property}:</Text>
+                            <Text style={styles.checkValue}>{value}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {visitMaterials[selectedVisitDetails.id] && visitMaterials[selectedVisitDetails.id].length > 0 && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Ücretli Ürünler</Text>
+                    {visitMaterials[selectedVisitDetails.id].map((material: any, idx: number) => (
+                      <View key={idx} style={styles.saleCard}>
+                        <Text style={styles.saleItemName}>{material.name}</Text>
+                        <Text style={styles.saleItemDetails}>
+                          {material.quantity.toFixed(1)} {material.unit} × {material.unitPrice.toFixed(2)} {material.currency} = {material.totalPrice.toFixed(2)} {material.currency}
+                        </Text>
+                      </View>
+                    ))}
+                    <View style={styles.totalSection}>
+                      <Text style={styles.totalLabel}>Toplam:</Text>
+                      <Text style={styles.totalValue}>
+                        {visitMaterials[selectedVisitDetails.id].reduce((sum: number, m: any) => sum + m.totalPrice, 0).toFixed(2)}{' '}
+                        {visitMaterials[selectedVisitDetails.id][0]?.currency || 'TRY'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {selectedVisitDetails.notes && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Operatör Notları</Text>
+                    <View style={styles.notesCard}>
+                      <Text style={styles.notesText}>{selectedVisitDetails.notes}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {selectedVisitDetails.customer_notes && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Müşteri Açıklamaları</Text>
+                    <View style={styles.notesCard}>
+                      <Text style={styles.notesText}>{selectedVisitDetails.customer_notes}</Text>
+                    </View>
+                  </View>
+                )}
+
+                {visitRevenues[selectedVisitDetails.id] > 0 && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>Ciro Bilgisi</Text>
+                    <View style={styles.revenueCard}>
+                      <Text style={styles.revenueCardLabel}>Toplam Ciro:</Text>
+                      <Text style={styles.revenueCardValue}>
+                        {visitRevenues[selectedVisitDetails.id].toFixed(2)} TRY
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.closeModalButton}
+                  onPress={() => setShowDetailsModal(false)}
+                >
+                  <Text style={styles.closeModalButtonText}>Kapat</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -1697,6 +1941,36 @@ const styles = StyleSheet.create({
     color: '#333',
     textTransform: 'capitalize',
   },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+    backgroundColor: '#f5f5f5',
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4caf50',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
   paginationContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -2086,5 +2360,186 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#4caf50',
+  },
+  viewDetailButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#e3f2fd',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#2196f3',
+  },
+  viewDetailButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2196f3',
+  },
+  detailModalContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  detailModalHeader: {
+    backgroundColor: '#4caf50',
+    paddingTop: 44,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  detailModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    flex: 1,
+    textAlign: 'center',
+  },
+  modalBackButton: {
+    width: 40,
+  },
+  detailModalContent: {
+    flex: 1,
+    padding: 16,
+  },
+  detailSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  detailSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  detailLabelModal: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+    flex: 1,
+  },
+  detailValueModal: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+    flex: 2,
+    textAlign: 'right',
+  },
+  equipmentCheckCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  equipmentTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  checkRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  checkLabel: {
+    fontSize: 13,
+    color: '#666',
+  },
+  checkValue: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '500',
+  },
+  saleCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  saleItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  saleItemDetails: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  totalSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  totalLabel: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  totalValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4caf50',
+  },
+  notesCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+  },
+  notesText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  revenueCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e9',
+    padding: 16,
+    borderRadius: 8,
+  },
+  revenueCardLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+  },
+  revenueCardValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4caf50',
+  },
+  closeModalButton: {
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  closeModalButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
