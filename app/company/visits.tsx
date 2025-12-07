@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Calendar, User, MapPin, Clock, FileText, Package, AlertCircle, X, ChevronLeft, ChevronRight, Search, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { ArrowLeft, Calendar, User, MapPin, Clock, FileText, Package, AlertCircle, X, ChevronLeft, ChevronRight, Search, ChevronDown, ChevronUp, Filter } from 'lucide-react-native';
 import { Visit } from '@/types/visits';
 
 export default function CompanyVisits() {
@@ -30,11 +30,81 @@ export default function CompanyVisits() {
   const [visitRevenues, setVisitRevenues] = useState<Record<string, number>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedVisits, setExpandedVisits] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterOperator, setFilterOperator] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterReportNo, setFilterReportNo] = useState('');
+  const [filterCustomer, setFilterCustomer] = useState('');
+  const [filterBranch, setFilterBranch] = useState('');
+  const [operators, setOperators] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
   const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
     loadVisits();
+    loadOperators();
+    loadCustomers();
   }, [filter, language, selectedMonth, selectedYear]);
+
+  const loadOperators = async () => {
+    try {
+      const { data: companyData } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('owner_id', user?.id)
+        .maybeSingle();
+
+      if (!companyData) return;
+
+      const { data: operatorData } = await supabase
+        .from('operators')
+        .select('id, profile_id')
+        .eq('company_id', companyData.id);
+
+      if (!operatorData) return;
+
+      const profileIds = operatorData.map(op => op.profile_id);
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', profileIds);
+
+      setOperators(profilesData || []);
+    } catch (error: any) {
+      console.error('Error loading operators:', error);
+    }
+  };
+
+  const loadCustomers = async () => {
+    try {
+      const { data: companyData } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('owner_id', user?.id)
+        .maybeSingle();
+
+      if (!companyData) return;
+
+      const { data: customersData } = await supabase
+        .from('customers')
+        .select('id, company_name')
+        .eq('company_id', companyData.id)
+        .order('company_name');
+
+      setCustomers(customersData || []);
+
+      const { data: branchesData } = await supabase
+        .from('customer_branches')
+        .select('id, branch_name, customer_id')
+        .order('branch_name');
+
+      setBranches(branchesData || []);
+    } catch (error: any) {
+      console.error('Error loading customers:', error);
+    }
+  };
 
   const loadVisits = async () => {
     try {
@@ -249,14 +319,47 @@ export default function CompanyVisits() {
   });
 
   const allVisits = filteredByStatus.filter(visit => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      visit.customer?.company_name?.toLowerCase().includes(query) ||
-      visit.branch?.branch_name?.toLowerCase().includes(query) ||
-      visit.report_number?.toString().includes(query) ||
-      visit.operator?.full_name?.toLowerCase().includes(query)
-    );
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = (
+        visit.customer?.company_name?.toLowerCase().includes(query) ||
+        visit.branch?.branch_name?.toLowerCase().includes(query) ||
+        visit.report_number?.toString().includes(query) ||
+        visit.operator?.full_name?.toLowerCase().includes(query)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    if (filterOperator && visit.operator?.id !== filterOperator) {
+      return false;
+    }
+
+    if (filterReportNo && visit.report_number && !visit.report_number.toString().includes(filterReportNo)) {
+      return false;
+    }
+
+    if (filterCustomer && visit.customer?.id !== filterCustomer) {
+      return false;
+    }
+
+    if (filterBranch && visit.branch?.id !== filterBranch) {
+      return false;
+    }
+
+    if (filterStartDate) {
+      const visitDate = new Date(visit.visit_date);
+      const startDate = new Date(filterStartDate);
+      if (visitDate < startDate) return false;
+    }
+
+    if (filterEndDate) {
+      const visitDate = new Date(visit.visit_date);
+      const endDate = new Date(filterEndDate);
+      endDate.setHours(23, 59, 59);
+      if (visitDate > endDate) return false;
+    }
+
+    return true;
   });
 
   const completedCount = (visits || []).filter(v => v.status === 'completed').length;
@@ -525,21 +628,221 @@ export default function CompanyVisits() {
       </View>
 
       {viewMode === 'list' && (
-        <View style={styles.searchContainer}>
-          <Search size={18} color="#999" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Ara: Müşteri, Şube, Rapor No..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#999"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={18} color="#999" />
+        <>
+          <View style={styles.searchContainer}>
+            <Search size={18} color="#999" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Ara: Müşteri, Şube, Operatör..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#999"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <X size={18} color="#999" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.filterToggle}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Filter size={18} color={showFilters ? "#4caf50" : "#999"} />
             </TouchableOpacity>
+          </View>
+
+          {showFilters && (
+            <View style={styles.filterPanel}>
+              <Text style={styles.filterPanelTitle}>Gelişmiş Filtreler</Text>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Müşteri</Text>
+                <View style={styles.filterPickerContainer}>
+                  <TouchableOpacity
+                    style={styles.filterPicker}
+                    onPress={() => {
+                      const customerIds = customers.map(c => c.id);
+                      const currentIndex = customerIds.indexOf(filterCustomer);
+                      if (currentIndex === -1) {
+                        setFilterCustomer(customerIds[0] || '');
+                      } else if (currentIndex === customerIds.length - 1) {
+                        setFilterCustomer('');
+                      } else {
+                        setFilterCustomer(customerIds[currentIndex + 1]);
+                      }
+                    }}
+                  >
+                    <Text style={styles.filterPickerText}>
+                      {filterCustomer
+                        ? customers.find(c => c.id === filterCustomer)?.company_name || 'Tümü'
+                        : 'Tümü'}
+                    </Text>
+                    <ChevronDown size={16} color="#666" />
+                  </TouchableOpacity>
+                  {filterCustomer && (
+                    <TouchableOpacity
+                      style={styles.filterClearButton}
+                      onPress={() => setFilterCustomer('')}
+                    >
+                      <X size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Şube</Text>
+                <View style={styles.filterPickerContainer}>
+                  <TouchableOpacity
+                    style={styles.filterPicker}
+                    onPress={() => {
+                      const filteredBranches = filterCustomer
+                        ? branches.filter(b => b.customer_id === filterCustomer)
+                        : branches;
+                      const branchIds = filteredBranches.map(b => b.id);
+                      const currentIndex = branchIds.indexOf(filterBranch);
+                      if (currentIndex === -1) {
+                        setFilterBranch(branchIds[0] || '');
+                      } else if (currentIndex === branchIds.length - 1) {
+                        setFilterBranch('');
+                      } else {
+                        setFilterBranch(branchIds[currentIndex + 1]);
+                      }
+                    }}
+                  >
+                    <Text style={styles.filterPickerText}>
+                      {filterBranch
+                        ? branches.find(b => b.id === filterBranch)?.branch_name || 'Tümü'
+                        : 'Tümü'}
+                    </Text>
+                    <ChevronDown size={16} color="#666" />
+                  </TouchableOpacity>
+                  {filterBranch && (
+                    <TouchableOpacity
+                      style={styles.filterClearButton}
+                      onPress={() => setFilterBranch('')}
+                    >
+                      <X size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Operatör</Text>
+                <View style={styles.filterPickerContainer}>
+                  <TouchableOpacity
+                    style={styles.filterPicker}
+                    onPress={() => {
+                      const operatorIds = operators.map(op => op.id);
+                      const currentIndex = operatorIds.indexOf(filterOperator);
+                      if (currentIndex === -1) {
+                        setFilterOperator(operatorIds[0] || '');
+                      } else if (currentIndex === operatorIds.length - 1) {
+                        setFilterOperator('');
+                      } else {
+                        setFilterOperator(operatorIds[currentIndex + 1]);
+                      }
+                    }}
+                  >
+                    <Text style={styles.filterPickerText}>
+                      {filterOperator
+                        ? operators.find(op => op.id === filterOperator)?.full_name || 'Tümü'
+                        : 'Tümü'}
+                    </Text>
+                    <ChevronDown size={16} color="#666" />
+                  </TouchableOpacity>
+                  {filterOperator && (
+                    <TouchableOpacity
+                      style={styles.filterClearButton}
+                      onPress={() => setFilterOperator('')}
+                    >
+                      <X size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Rapor No</Text>
+                <View style={styles.filterInputContainer}>
+                  <TextInput
+                    style={styles.filterInput}
+                    placeholder="Rapor numarası"
+                    value={filterReportNo}
+                    onChangeText={setFilterReportNo}
+                    placeholderTextColor="#999"
+                  />
+                  {filterReportNo && (
+                    <TouchableOpacity
+                      style={styles.filterClearButton}
+                      onPress={() => setFilterReportNo('')}
+                    >
+                      <X size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Başlangıç Tarihi</Text>
+                <View style={styles.filterInputContainer}>
+                  <TextInput
+                    style={styles.filterInput}
+                    placeholder="YYYY-MM-DD"
+                    value={filterStartDate}
+                    onChangeText={setFilterStartDate}
+                    placeholderTextColor="#999"
+                  />
+                  {filterStartDate && (
+                    <TouchableOpacity
+                      style={styles.filterClearButton}
+                      onPress={() => setFilterStartDate('')}
+                    >
+                      <X size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Bitiş Tarihi</Text>
+                <View style={styles.filterInputContainer}>
+                  <TextInput
+                    style={styles.filterInput}
+                    placeholder="YYYY-MM-DD"
+                    value={filterEndDate}
+                    onChangeText={setFilterEndDate}
+                    placeholderTextColor="#999"
+                  />
+                  {filterEndDate && (
+                    <TouchableOpacity
+                      style={styles.filterClearButton}
+                      onPress={() => setFilterEndDate('')}
+                    >
+                      <X size={14} color="#999" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.clearAllFiltersButton}
+                onPress={() => {
+                  setFilterCustomer('');
+                  setFilterBranch('');
+                  setFilterOperator('');
+                  setFilterReportNo('');
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                  setSearchQuery('');
+                }}
+              >
+                <Text style={styles.clearAllFiltersText}>Tüm Filtreleri Temizle</Text>
+              </TouchableOpacity>
+            </View>
           )}
-        </View>
+        </>
       )}
 
       <View style={styles.filterContainer}>
@@ -1084,6 +1387,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#333',
     padding: 0,
+  },
+  filterToggle: {
+    padding: 4,
+  },
+  filterPanel: {
+    backgroundColor: '#fff',
+    marginHorizontal: 12,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    gap: 12,
+  },
+  filterPanelTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 4,
+  },
+  filterRow: {
+    gap: 6,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  filterPickerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  filterPicker: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  filterPickerText: {
+    fontSize: 13,
+    color: '#333',
+  },
+  filterInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  filterInput: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    fontSize: 13,
+    color: '#333',
+  },
+  filterClearButton: {
+    padding: 4,
+  },
+  clearAllFiltersButton: {
+    backgroundColor: '#f44336',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  clearAllFiltersText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
   visitCard: {
     backgroundColor: '#fff',
