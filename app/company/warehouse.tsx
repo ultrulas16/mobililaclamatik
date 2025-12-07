@@ -58,13 +58,9 @@ export default function CompanyWarehouse() {
     try {
       setLoading(true);
 
-      // Use the user's profile ID as company_id (this is how materials are stored)
-      const userCompanyId = user?.id;
-      if (!userCompanyId) throw new Error('User not found');
+      if (!user?.id) throw new Error('User not found');
 
-      setCompanyId(userCompanyId);
-
-      // Get company info for warehouse operations
+      // Get company info - materials are stored with this company_id
       const { data: companyData, error: companyError } = await supabase
         .from('companies')
         .select('id')
@@ -73,10 +69,13 @@ export default function CompanyWarehouse() {
 
       if (companyError) throw companyError;
 
+      const actualCompanyId = companyData?.id || user.id;
+      setCompanyId(actualCompanyId);
+
       let { data: warehouseData, error: warehouseError } = await supabase
         .from('admin_warehouses')
         .select('*')
-        .eq('company_id', companyData?.id || userCompanyId)
+        .eq('company_id', actualCompanyId)
         .eq('warehouse_type', 'company_main')
         .maybeSingle();
 
@@ -88,7 +87,7 @@ export default function CompanyWarehouse() {
           .insert([{
             name: 'Şirket Ana Deposu',
             warehouse_type: 'company_main',
-            company_id: companyData?.id || userCompanyId,
+            company_id: actualCompanyId,
             location: 'Merkez',
             is_active: true,
             created_by: user?.id,

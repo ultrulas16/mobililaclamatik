@@ -53,16 +53,17 @@ type TabType = 'materials' | 'biocidal' | 'equipment' | 'visit_types' | 'target_
 
 export default function CompanyDefinitions() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { t } = useLanguage();
-  
+
   const [activeTab, setActiveTab] = useState<TabType>('materials');
   const [materials, setMaterials] = useState<Material[]>([]);
   const [biocidalProducts, setBiocidalProducts] = useState<BiocidalProduct[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [visitTypes, setVisitTypes] = useState<VisitType[]>([]);
   const [targetPests, setTargetPests] = useState<TargetPest[]>([]);
-  
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -80,8 +81,33 @@ export default function CompanyDefinitions() {
   const [currency, setCurrency] = useState('usd');
 
   useEffect(() => {
-    loadData();
-  }, [activeTab]);
+    loadCompanyId();
+  }, []);
+
+  useEffect(() => {
+    if (companyId) {
+      loadData();
+    }
+  }, [activeTab, companyId]);
+
+  const loadCompanyId = async () => {
+    try {
+      if (!user?.id) return;
+
+      const { data: companyData, error } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setCompanyId(companyData?.id || profile?.company_id || null);
+    } catch (error) {
+      console.error('Error loading company ID:', error);
+      setCompanyId(profile?.company_id || null);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -108,10 +134,11 @@ export default function CompanyDefinitions() {
   };
 
   const loadMaterials = async () => {
+    if (!companyId) return;
     const { data, error } = await supabase
       .from('company_materials')
       .select('*')
-      .eq('company_id', profile?.company_id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -119,10 +146,11 @@ export default function CompanyDefinitions() {
   };
 
   const loadBiocidalProducts = async () => {
+    if (!companyId) return;
     const { data, error } = await supabase
       .from('company_biocidal_products')
       .select('*')
-      .eq('company_id', profile?.company_id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -130,10 +158,11 @@ export default function CompanyDefinitions() {
   };
 
   const loadEquipment = async () => {
+    if (!companyId) return;
     const { data, error } = await supabase
       .from('company_equipment')
       .select('*')
-      .eq('company_id', profile?.company_id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -141,10 +170,11 @@ export default function CompanyDefinitions() {
   };
 
   const loadVisitTypes = async () => {
+    if (!companyId) return;
     const { data, error } = await supabase
       .from('company_visit_types')
       .select('*')
-      .eq('company_id', profile?.company_id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -152,10 +182,11 @@ export default function CompanyDefinitions() {
   };
 
   const loadTargetPests = async () => {
+    if (!companyId) return;
     const { data, error } = await supabase
       .from('company_target_pests')
       .select('*')
-      .eq('company_id', profile?.company_id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -185,8 +216,12 @@ export default function CompanyDefinitions() {
   };
 
   const createItem = async () => {
+    if (!companyId) {
+      throw new Error('Company ID not found');
+    }
+
     const baseData = {
-      company_id: profile?.company_id,
+      company_id: companyId,
       name: name.trim(),
       description: description.trim() || null,
       is_active: isActive,
