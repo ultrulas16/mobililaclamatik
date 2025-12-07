@@ -175,117 +175,155 @@ export default function ManageCustomers() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Müşteriler');
 
-      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const fileUri = FileSystem.cacheDirectory + 'musteri_sablonu.xlsx';
-      await FileSystem.writeAsStringAsync(fileUri, wbout, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
       if (Platform.OS === 'web') {
+        const wbout = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${wbout}`;
+        link.href = url;
         link.download = 'musteri_sablonu.xlsx';
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Alert.alert('Başarılı', 'Şablon dosyası indirildi');
       } else {
+        const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+        const fileUri = FileSystem.cacheDirectory + 'musteri_sablonu.xlsx';
+        await FileSystem.writeAsStringAsync(fileUri, wbout, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
         await Sharing.shareAsync(fileUri);
+        Alert.alert('Başarılı', 'Şablon dosyası indirildi');
       }
-
-      Alert.alert('Başarılı', 'Şablon dosyası indirildi');
     } catch (error) {
       console.error('Error downloading template:', error);
-      Alert.alert('Hata', 'Şablon dosyası indirilemedi');
+      Alert.alert('Hata', 'Şablon dosyası indirilemedi: ' + error);
     }
+  };
+
+  const processExcelData = async (workbook: XLSX.WorkBook) => {
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) {
+      Alert.alert('Hata', 'Excel dosyası boş');
+      return;
+    }
+
+    setLoading(true);
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    for (const row of data as any[]) {
+      try {
+        const fullName = row['Ad Soyad'] || row['Full Name'];
+        const companyName = row['Şirket Adı'] || row['Company Name'];
+        const email = row['E-posta'] || row['Email'];
+        const phone = row['Telefon'] || row['Phone'];
+        const password = row['Şifre'] || row['Password'];
+
+        if (!fullName || !companyName || !email || !password) {
+          errors.push(`Satır atlandı: Eksik bilgi - ${email || 'bilinmeyen'}`);
+          errorCount++;
+          continue;
+        }
+
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-customer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabase.supabaseAnonKey}`,
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            full_name: fullName,
+            phone: phone || '',
+            company_name: companyName,
+            created_by_company_id: profile?.company_id,
+          }),
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          const result = await response.json();
+          errors.push(`${email}: ${result.error || 'Bilinmeyen hata'}`);
+          errorCount++;
+        }
+      } catch (error: any) {
+        errors.push(`Hata: ${error.message}`);
+        errorCount++;
+      }
+    }
+
+    setLoading(false);
+    loadCustomers();
+
+    let message = `Başarılı: ${successCount}\nHatalı: ${errorCount}`;
+    if (errors.length > 0) {
+      message += '\n\nHatalar:\n' + errors.slice(0, 5).join('\n');
+      if (errors.length > 5) {
+        message += `\n... ve ${errors.length - 5} hata daha`;
+      }
+    }
+
+    Alert.alert('İçe Aktarma Tamamlandı', message);
   };
 
   const handleImportExcel = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'application/vnd.ms-excel'
-        ],
-        copyToCacheDirectory: true,
-      });
+      if (Platform.OS === 'web') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls';
+        input.onchange = async (e: any) => {
+          try {
+            const file = e.target.files[0];
+            if (!file) return;
 
-      if (result.canceled) {
-        return;
-      }
-
-      const fileUri = result.assets[0].uri;
-      const fileContent = await FileSystem.readAsStringAsync(fileUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const workbook = XLSX.read(fileContent, { type: 'base64' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(worksheet);
-
-      if (data.length === 0) {
-        Alert.alert('Hata', 'Excel dosyası boş');
-        return;
-      }
-
-      setLoading(true);
-      let successCount = 0;
-      let errorCount = 0;
-      const errors: string[] = [];
-
-      for (const row of data as any[]) {
-        try {
-          const fullName = row['Ad Soyad'] || row['Full Name'];
-          const companyName = row['Şirket Adı'] || row['Company Name'];
-          const email = row['E-posta'] || row['Email'];
-          const phone = row['Telefon'] || row['Phone'];
-          const password = row['Şifre'] || row['Password'];
-
-          if (!fullName || !companyName || !email || !password) {
-            errors.push(`Satır atlandı: Eksik bilgi - ${email || 'bilinmeyen'}`);
-            errorCount++;
-            continue;
+            const reader = new FileReader();
+            reader.onload = async (event: any) => {
+              try {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                await processExcelData(workbook);
+              } catch (error: any) {
+                console.error('Error reading Excel:', error);
+                Alert.alert('Hata', 'Excel dosyası okunamadı: ' + error.message);
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          } catch (error: any) {
+            console.error('Error handling file:', error);
+            Alert.alert('Hata', 'Dosya işlenemedi: ' + error.message);
           }
+        };
+        input.click();
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel'
+          ],
+          copyToCacheDirectory: true,
+        });
 
-          const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-customer`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabase.supabaseAnonKey}`,
-            },
-            body: JSON.stringify({
-              email,
-              password,
-              full_name: fullName,
-              phone: phone || '',
-              company_name: companyName,
-              created_by_company_id: profile?.company_id,
-            }),
-          });
-
-          if (response.ok) {
-            successCount++;
-          } else {
-            const result = await response.json();
-            errors.push(`${email}: ${result.error || 'Bilinmeyen hata'}`);
-            errorCount++;
-          }
-        } catch (error: any) {
-          errors.push(`Hata: ${error.message}`);
-          errorCount++;
+        if (result.canceled) {
+          return;
         }
+
+        const fileUri = result.assets[0].uri;
+        const fileContent = await FileSystem.readAsStringAsync(fileUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const workbook = XLSX.read(fileContent, { type: 'base64' });
+        await processExcelData(workbook);
       }
-
-      setLoading(false);
-      loadCustomers();
-
-      let message = `Başarılı: ${successCount}\nHatalı: ${errorCount}`;
-      if (errors.length > 0) {
-        message += '\n\nHatalar:\n' + errors.slice(0, 5).join('\n');
-        if (errors.length > 5) {
-          message += `\n... ve ${errors.length - 5} hata daha`;
-        }
-      }
-
-      Alert.alert('İçe Aktarma Tamamlandı', message);
     } catch (error: any) {
       setLoading(false);
       console.error('Error importing Excel:', error);
