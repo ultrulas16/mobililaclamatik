@@ -259,12 +259,14 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.name.boltexponativewind;
-				PRODUCT_NAME = boltexponativewind;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.boltexponativewind";
+				PRODUCT_NAME = "boltexponativewind";
 				SWIFT_OBJC_BRIDGING_HEADER = "boltexponativewind/boltexponativewind-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				CODE_SIGN_ENTITLEMENTS = boltexponativewind/boltexponativewind.entitlements;
 			};
 			name = Debug;
 		};
@@ -286,11 +288,13 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.name.boltexponativewind;
-				PRODUCT_NAME = boltexponativewind;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.boltexponativewind";
+				PRODUCT_NAME = "boltexponativewind";
 				SWIFT_OBJC_BRIDGING_HEADER = "boltexponativewind/boltexponativewind-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				CODE_SIGN_ENTITLEMENTS = boltexponativewind/boltexponativewind.entitlements;
 			};
 			name = Release;
 		};

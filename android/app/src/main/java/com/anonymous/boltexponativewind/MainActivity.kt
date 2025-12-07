@@ -1,4 +1,4 @@
-package com.boltexponativewind
+package com.anonymous.boltexponativewind
 
 import android.os.Build
 import android.os.Bundle
