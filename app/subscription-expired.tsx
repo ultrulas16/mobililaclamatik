@@ -18,7 +18,7 @@ export default function SubscriptionExpired() {
   };
 
   const handleRenewSubscription = () => {
-    router.push('/company/subscription-plans');
+    router.push('/company/subscription');
   };
 
   return (

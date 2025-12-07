@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Building, Users, Calendar, FileText, LogOut, Settings, DollarSign, Package, Warehouse, ArrowLeftRight, ChevronRight } from 'lucide-react-native';
+import { Building, Users, Calendar, FileText, LogOut, Settings, DollarSign, Package, Warehouse, ArrowLeftRight, ChevronRight, CreditCard } from 'lucide-react-native';
 import { SubscriptionStatus } from '@/components/SubscriptionStatus';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -68,6 +68,7 @@ export default function CompanyDashboard() {
   };
 
   const menuItems = [
+    { icon: CreditCard, label: 'Abonelik Planları', route: '/company/subscription', color: '#7c3aed', gradient: ['#7c3aed', '#6d28d9'] },
     { icon: Users, label: t('manageOperators'), route: '/company/operators', color: '#10b981', gradient: ['#10b981', '#059669'] },
     { icon: Building, label: t('manageCustomers'), route: '/company/customers', color: '#3b82f6', gradient: ['#3b82f6', '#2563eb'] },
     { icon: Building, label: t('manageBranches'), route: '/company/manage-branches', color: '#8b5cf6', gradient: ['#8b5cf6', '#7c3aed'] },
