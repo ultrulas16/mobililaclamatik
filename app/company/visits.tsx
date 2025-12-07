@@ -1258,7 +1258,6 @@ export default function CompanyVisits() {
                           ]}>
                             {visit.is_invoiced && <Text style={styles.checkmark}>✓</Text>}
                           </View>
-                          <Text style={styles.invoiceLabel}>Fatura</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1270,6 +1269,21 @@ export default function CompanyVisits() {
                     <Text style={styles.dayModalVisitRevenue}>
                       Ciro: {visitRevenues[visit.id].toFixed(2)} TRY
                     </Text>
+                  )}
+                  {visit.status === 'completed' && visitMaterials[visit.id] && visitMaterials[visit.id].length > 0 && (
+                    <View style={styles.dayModalMaterials}>
+                      <Text style={styles.dayModalMaterialsTitle}>Ücretli Ürünler:</Text>
+                      {visitMaterials[visit.id].map((material: any, idx: number) => (
+                        <View key={idx} style={styles.dayModalMaterialItem}>
+                          <Text style={styles.dayModalMaterialName} numberOfLines={1}>
+                            • {material.name}
+                          </Text>
+                          <Text style={styles.dayModalMaterialPrice}>
+                            {material.quantity.toFixed(1)} {material.unit} - {material.totalPrice.toFixed(2)} {material.currency}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
                   )}
                 </View>
               ))}
@@ -2360,6 +2374,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#4caf50',
+    marginTop: 4,
+  },
+  dayModalMaterials: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  dayModalMaterialsTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+  dayModalMaterialItem: {
+    marginBottom: 6,
+    paddingLeft: 8,
+  },
+  dayModalMaterialName: {
+    fontSize: 12,
+    color: '#333',
+    marginBottom: 2,
+  },
+  dayModalMaterialPrice: {
+    fontSize: 12,
+    color: '#4caf50',
+    fontWeight: '500',
+    paddingLeft: 12,
   },
   viewDetailButton: {
     flexDirection: 'row',
