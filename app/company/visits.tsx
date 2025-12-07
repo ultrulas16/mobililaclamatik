@@ -610,7 +610,7 @@ export default function CompanyVisits() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ziyaretler ve Raporlar</Text>
+        <Text style={styles.headerTitle}>Ziyaretler</Text>
         <View style={styles.placeholder} />
       </View>
 
