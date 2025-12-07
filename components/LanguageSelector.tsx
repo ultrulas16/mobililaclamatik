@@ -11,7 +11,8 @@ const languages: { code: Language; name: string; flag: string }[] = [
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
   { code: 'es', name: 'Español', flag: '🇪🇸' },
   { code: 'fr', name: 'Français', flag: '🇫🇷' },
-  { code: 'th', name: 'ไทย', flag: '🇹🇭' },
+  { code: 'th', name: 'ไทย', flag: '🇹🇭' },  
+  { code: 'ru', name: 'Русский', flag: '🇷🇺' }, // Rusça Eklendi
 ];
 
 export function LanguageSelector() {
