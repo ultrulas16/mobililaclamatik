@@ -2518,7 +2518,6 @@ export const translations = {
 
 // constants/translations.ts
 
-export const translations = {
   tr: {
     // Genel
     welcome: 'Hoş Geldiniz',
