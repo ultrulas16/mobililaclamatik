@@ -51,7 +51,7 @@ export default function OperatorDashboard() {
 
         <MenuCard
           icon={Calendar}
-          label="Ziyaretlerim"
+          label={t('myVisits')} // Düzeltildi: "Ziyaretlerim" -> t('myVisits')
           gradient={['#06b6d4', '#0891b2']}
           onPress={() => router.push('/operator/visits')}
         />
@@ -65,14 +65,14 @@ export default function OperatorDashboard() {
 
         <MenuCard
           icon={Package}
-          label="Depom"
+          label={t('myWarehouse')} // Düzeltildi: "Depom" -> t('myWarehouse')
           gradient={['#f59e0b', '#d97706']}
           onPress={() => router.push('/operator/warehouse')}
         />
 
         <MenuCard
           icon={ArrowLeftRight}
-          label="Malzeme Talebi"
+          label={t('transferRequests')} // Düzeltildi: "Malzeme Talebi" -> t('transferRequests')
           gradient={['#3b82f6', '#2563eb']}
           onPress={() => router.push('/operator/transfer-request')}
         />
