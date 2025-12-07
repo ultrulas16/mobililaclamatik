@@ -4,20 +4,21 @@ import { useRouter, useSegments } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Index() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, subscriptionStatus } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const [waitingForProfile, setWaitingForProfile] = useState(false);
 
   useEffect(() => {
-    if (loading) {
+    if (loading || subscriptionStatus === 'loading') {
       console.log('[INDEX] Auth loading...');
       return;
     }
 
-    console.log('[INDEX] User:', !!user, 'Profile:', !!profile, 'Role:', profile?.role);
+    console.log('[INDEX] User:', !!user, 'Profile:', !!profile, 'Role:', profile?.role, 'Subscription:', subscriptionStatus);
 
     const inAuthGroup = segments[0] === '(tabs)';
+    const inSubscriptionExpiredPage = segments[0] === 'subscription-expired';
 
     if (user && !profile) {
       console.log('[INDEX] User without profile - waiting for creation...');
@@ -29,6 +30,10 @@ export default function Index() {
       if (segments[0] !== 'welcome' && segments[0] !== 'auth') {
         router.replace('/welcome');
       }
+    } else if (profile.role === 'company' && subscriptionStatus === 'expired' && !inSubscriptionExpiredPage) {
+      console.log('[INDEX] Subscription expired, redirecting to expired page');
+      setWaitingForProfile(false);
+      router.replace('/subscription-expired');
     } else if (!inAuthGroup) {
       setWaitingForProfile(false);
       console.log('[INDEX] Redirecting to dashboard:', profile.role);
@@ -55,7 +60,7 @@ export default function Index() {
           break;
       }
     }
-  }, [user, profile, loading, segments]);
+  }, [user, profile, loading, subscriptionStatus, segments]);
 
   return (
     <View style={styles.container}>

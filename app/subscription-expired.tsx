@@ -18,15 +18,7 @@ export default function SubscriptionExpired() {
   };
 
   const handleRenewSubscription = () => {
-    // Bu kısım genellikle bir faturalandırma/abonelik yönetimi sayfasına yönlendirir.
-    // Şimdilik, sadece bir uyarı gösterebiliriz.
-    Alert.alert(
-      t('renewSubscription'),
-      t('contactAdminToRenew'),
-      [{ text: t('ok') }]
-    );
-    // Gerçek bir uygulamada, belirli bir faturalandırma ekranına yönlendirebilirsiniz:
-    // router.push('/billing/renew');
+    router.push('/company/subscription-plans');
   };
 
   return (
