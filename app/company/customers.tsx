@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Plus, User, Mail, Phone, Building, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Plus, User, Mail, Phone, Building, Trash2, Upload, Download } from 'lucide-react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as XLSX from 'xlsx';
 
 interface Customer {
   id: string;
@@ -148,28 +152,189 @@ export default function ManageCustomers() {
     );
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const templateData = [
+        {
+          'Ad Soyad': 'Örnek Müşteri',
+          'Şirket Adı': 'Örnek Şirket A.Ş.',
+          'E-posta': 'ornek@firma.com',
+          'Telefon': '05001234567',
+          'Şifre': 'Guvenli123!'
+        },
+        {
+          'Ad Soyad': 'Ahmet Yılmaz',
+          'Şirket Adı': 'ABC Restoran',
+          'E-posta': 'ahmet@abcrestoran.com',
+          'Telefon': '05321234567',
+          'Şifre': 'Sifre123!'
+        },
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(templateData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Müşteriler');
+
+      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const fileUri = FileSystem.cacheDirectory + 'musteri_sablonu.xlsx';
+      await FileSystem.writeAsStringAsync(fileUri, wbout, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      if (Platform.OS === 'web') {
+        const link = document.createElement('a');
+        link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${wbout}`;
+        link.download = 'musteri_sablonu.xlsx';
+        link.click();
+      } else {
+        await Sharing.shareAsync(fileUri);
+      }
+
+      Alert.alert('Başarılı', 'Şablon dosyası indirildi');
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      Alert.alert('Hata', 'Şablon dosyası indirilemedi');
+    }
+  };
+
+  const handleImportExcel = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel'
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const fileUri = result.assets[0].uri;
+      const fileContent = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const workbook = XLSX.read(fileContent, { type: 'base64' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(worksheet);
+
+      if (data.length === 0) {
+        Alert.alert('Hata', 'Excel dosyası boş');
+        return;
+      }
+
+      setLoading(true);
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (const row of data as any[]) {
+        try {
+          const fullName = row['Ad Soyad'] || row['Full Name'];
+          const companyName = row['Şirket Adı'] || row['Company Name'];
+          const email = row['E-posta'] || row['Email'];
+          const phone = row['Telefon'] || row['Phone'];
+          const password = row['Şifre'] || row['Password'];
+
+          if (!fullName || !companyName || !email || !password) {
+            errors.push(`Satır atlandı: Eksik bilgi - ${email || 'bilinmeyen'}`);
+            errorCount++;
+            continue;
+          }
+
+          const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-customer`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabase.supabaseAnonKey}`,
+            },
+            body: JSON.stringify({
+              email,
+              password,
+              full_name: fullName,
+              phone: phone || '',
+              company_name: companyName,
+              created_by_company_id: profile?.company_id,
+            }),
+          });
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            const result = await response.json();
+            errors.push(`${email}: ${result.error || 'Bilinmeyen hata'}`);
+            errorCount++;
+          }
+        } catch (error: any) {
+          errors.push(`Hata: ${error.message}`);
+          errorCount++;
+        }
+      }
+
+      setLoading(false);
+      loadCustomers();
+
+      let message = `Başarılı: ${successCount}\nHatalı: ${errorCount}`;
+      if (errors.length > 0) {
+        message += '\n\nHatalar:\n' + errors.slice(0, 5).join('\n');
+        if (errors.length > 5) {
+          message += `\n... ve ${errors.length - 5} hata daha`;
+        }
+      }
+
+      Alert.alert('İçe Aktarma Tamamlandı', message);
+    } catch (error: any) {
+      setLoading(false);
+      console.error('Error importing Excel:', error);
+      Alert.alert('Hata', 'Excel dosyası okunamadı: ' + error.message);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage Customers</Text>
+        <Text style={styles.headerTitle}>Müşterileri Yönet</Text>
         <TouchableOpacity onPress={() => setShowForm(!showForm)} style={styles.addButton}>
           <Plus size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content}>
+        <View style={styles.excelActionsContainer}>
+          <TouchableOpacity
+            style={styles.excelButton}
+            onPress={handleDownloadTemplate}
+          >
+            <Download size={20} color="#fff" />
+            <Text style={styles.excelButtonText}>Şablon İndir</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.excelButton, styles.excelButtonImport]}
+            onPress={handleImportExcel}
+            disabled={loading}
+          >
+            <Upload size={20} color="#fff" />
+            <Text style={styles.excelButtonText}>
+              {loading ? 'Yükleniyor...' : 'Excel İçe Aktar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         {showForm && (
           <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Add New Customer</Text>
+            <Text style={styles.formTitle}>Yeni Müşteri Ekle</Text>
 
             <View style={styles.inputContainer}>
               <User size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Full Name"
+                placeholder="Ad Soyad"
                 value={fullName}
                 onChangeText={setFullName}
               />
@@ -179,7 +344,7 @@ export default function ManageCustomers() {
               <Building size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Company Name"
+                placeholder="Şirket Adı"
                 value={companyName}
                 onChangeText={setCompanyName}
               />
@@ -189,7 +354,7 @@ export default function ManageCustomers() {
               <Mail size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Email"
+                placeholder="E-posta"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -201,7 +366,7 @@ export default function ManageCustomers() {
               <Phone size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Phone"
+                placeholder="Telefon"
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
@@ -212,7 +377,7 @@ export default function ManageCustomers() {
               <Mail size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Password"
+                placeholder="Şifre"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -225,16 +390,16 @@ export default function ManageCustomers() {
               disabled={loading}
             >
               <Text style={styles.submitButtonText}>
-                {loading ? 'Adding...' : 'Add Customer'}
+                {loading ? 'Ekleniyor...' : 'Müşteri Ekle'}
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.listContainer}>
-          <Text style={styles.listTitle}>Customers ({customers.length})</Text>
+          <Text style={styles.listTitle}>Müşteriler ({customers.length})</Text>
           {customers.length === 0 ? (
-            <Text style={styles.emptyText}>No customers yet</Text>
+            <Text style={styles.emptyText}>Henüz müşteri yok</Text>
           ) : (
             customers.map((customer) => (
               <View key={customer.id} style={styles.customerCard}>
@@ -400,5 +565,29 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 16,
     paddingVertical: 20,
+  },
+  excelActionsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  excelButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4caf50',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  excelButtonImport: {
+    backgroundColor: '#2196f3',
+  },
+  excelButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
