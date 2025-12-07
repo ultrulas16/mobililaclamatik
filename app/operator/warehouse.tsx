@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert,
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Plus, Minus, Package, CreditCard as Edit, Trash, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Plus, Minus, Package, CreditCard as Edit, Trash, Search, X, ChevronDown } from 'lucide-react-native';
 import { PaidProduct, WarehouseItem } from '@/types/visits';
 
 interface WarehouseWithItems {
@@ -29,6 +29,7 @@ export default function OperatorWarehouse() {
   const [selectedProduct, setSelectedProduct] = useState<string>('');
   const [quantity, setQuantity] = useState('');
   const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   useEffect(() => {
     if (profile?.id) {
@@ -406,32 +407,71 @@ export default function OperatorWarehouse() {
 
             <View style={styles.modalBody}>
               <Text style={styles.inputLabel}>Ürün Seçin ({availableProducts.length} ürün)</Text>
-              <View style={styles.pickerContainer}>
-                <ScrollView style={styles.productList} nestedScrollEnabled>
-                  {availableProducts.length === 0 ? (
-                    <View style={styles.emptyProductList}>
-                      <Text style={styles.emptyProductText}>Hiç ürün bulunamadı</Text>
-                      <Text style={styles.emptyProductSubtext}>
-                        Lütfen firma tanımlamalarından ürün ekleyin
-                      </Text>
+              {availableProducts.length === 0 ? (
+                <View style={styles.emptyProductList}>
+                  <Text style={styles.emptyProductText}>Hiç ürün bulunamadı</Text>
+                  <Text style={styles.emptyProductSubtext}>
+                    Lütfen firma tanımlamalarından ürün ekleyin
+                  </Text>
+                </View>
+              ) : (
+                <View>
+                  <TouchableOpacity
+                    style={styles.dropdownButton}
+                    onPress={() => setShowProductPicker(!showProductPicker)}
+                  >
+                    <Text style={[
+                      styles.dropdownButtonText,
+                      !selectedProduct && styles.dropdownPlaceholder
+                    ]}>
+                      {selectedProduct
+                        ? availableProducts.find(p => p.id === selectedProduct)?.name
+                        : 'Ürün seçiniz'}
+                    </Text>
+                    <ChevronDown size={20} color="#666" style={[
+                      styles.dropdownIcon,
+                      showProductPicker && styles.dropdownIconOpen
+                    ]} />
+                  </TouchableOpacity>
+
+                  {showProductPicker && (
+                    <View style={styles.dropdownList}>
+                      <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                        {availableProducts.map(product => (
+                          <TouchableOpacity
+                            key={product.id}
+                            style={[
+                              styles.dropdownItem,
+                              selectedProduct === product.id && styles.dropdownItemActive
+                            ]}
+                            onPress={() => {
+                              setSelectedProduct(product.id);
+                              setShowProductPicker(false);
+                            }}
+                          >
+                            <View style={styles.dropdownItemContent}>
+                              <Text style={[
+                                styles.dropdownItemText,
+                                selectedProduct === product.id && styles.dropdownItemTextActive
+                              ]}>
+                                {product.name}
+                              </Text>
+                              {product.unit && (
+                                <Text style={styles.dropdownItemUnit}>
+                                  {product.unit}
+                                </Text>
+                              )}
+                            </View>
+                            {selectedProduct === product.id && (
+                              <Text style={styles.checkmark}>✓</Text>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
-                  ) : (
-                    availableProducts.map(product => (
-                      <TouchableOpacity
-                        key={product.id}
-                        style={[
-                          styles.productItem,
-                          selectedProduct === product.id && styles.productItemSelected,
-                        ]}
-                        onPress={() => setSelectedProduct(product.id)}
-                      >
-                        <Text style={styles.productName}>{product.name}</Text>
-                        <Text style={styles.productUnit}>{product.unit}</Text>
-                      </TouchableOpacity>
-                    ))
                   )}
-                </ScrollView>
-              </View>
+                </View>
+              )}
 
               <Text style={styles.inputLabel}>Miktar</Text>
               <TextInput
@@ -450,6 +490,7 @@ export default function OperatorWarehouse() {
                   setShowAddModal(false);
                   setSelectedProduct('');
                   setQuantity('');
+                  setShowProductPicker(false);
                 }}
               >
                 <Text style={styles.cancelButtonText}>İptal</Text>
@@ -742,33 +783,78 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
   },
-  pickerContainer: {
-    marginBottom: 16,
-    maxHeight: 200,
-  },
-  productList: {
-    maxHeight: 200,
-  },
-  productItem: {
-    padding: 12,
+  dropdownButton: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  productItemSelected: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
-  },
-  productName: {
+  dropdownButtonText: {
     fontSize: 14,
-    fontWeight: '600',
     color: '#333',
+    flex: 1,
   },
-  productUnit: {
+  dropdownPlaceholder: {
+    color: '#999',
+  },
+  dropdownIcon: {
+    transform: [{ rotate: '0deg' }],
+  },
+  dropdownIconOpen: {
+    transform: [{ rotate: '180deg' }],
+  },
+  dropdownList: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 16,
+    maxHeight: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownScroll: {
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#e8f5e9',
+  },
+  dropdownItemContent: {
+    flex: 1,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 2,
+  },
+  dropdownItemTextActive: {
+    color: '#4caf50',
+    fontWeight: '600',
+  },
+  dropdownItemUnit: {
     fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+    color: '#999',
+  },
+  checkmark: {
+    fontSize: 18,
+    color: '#4caf50',
+    fontWeight: 'bold',
   },
   input: {
     backgroundColor: '#f5f5f5',

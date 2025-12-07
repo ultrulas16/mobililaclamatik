@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Modal,
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Plus, Package, CreditCard as Edit, Trash, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Plus, Package, CreditCard as Edit, Trash, Search, X, ChevronDown } from 'lucide-react-native';
 import { PaidProduct } from '@/types/visits';
 
 interface WarehouseItem {
@@ -43,6 +43,7 @@ export default function CompanyWarehouse() {
   const [minQuantity, setMinQuantity] = useState('10');
   const [maxQuantity, setMaxQuantity] = useState('1000');
   const [unitCost, setUnitCost] = useState('0');
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   useEffect(() => {
     loadCompanyAndWarehouse();
@@ -245,6 +246,7 @@ export default function CompanyWarehouse() {
     setMinQuantity('10');
     setMaxQuantity('1000');
     setUnitCost('0');
+    setShowProductPicker(false);
   };
 
   const filteredItems = items.filter(item => {
@@ -435,27 +437,62 @@ export default function CompanyWarehouse() {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View style={styles.pickerContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {products.map(product => (
-                      <TouchableOpacity
-                        key={product.id}
-                        style={[
-                          styles.productChip,
-                          selectedProduct === product.id && styles.productChipActive
-                        ]}
-                        onPress={() => setSelectedProduct(product.id)}
-                        disabled={!!editingItem}
-                      >
-                        <Text style={[
-                          styles.productChipText,
-                          selectedProduct === product.id && styles.productChipTextActive
-                        ]}>
-                          {product.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                <View>
+                  <TouchableOpacity
+                    style={styles.dropdownButton}
+                    onPress={() => !editingItem && setShowProductPicker(!showProductPicker)}
+                    disabled={!!editingItem}
+                  >
+                    <Text style={[
+                      styles.dropdownButtonText,
+                      !selectedProduct && styles.dropdownPlaceholder
+                    ]}>
+                      {selectedProduct
+                        ? products.find(p => p.id === selectedProduct)?.name
+                        : 'Ürün seçiniz'}
+                    </Text>
+                    <ChevronDown size={20} color="#666" style={[
+                      styles.dropdownIcon,
+                      showProductPicker && styles.dropdownIconOpen
+                    ]} />
+                  </TouchableOpacity>
+
+                  {showProductPicker && (
+                    <View style={styles.dropdownList}>
+                      <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                        {products.map(product => (
+                          <TouchableOpacity
+                            key={product.id}
+                            style={[
+                              styles.dropdownItem,
+                              selectedProduct === product.id && styles.dropdownItemActive
+                            ]}
+                            onPress={() => {
+                              setSelectedProduct(product.id);
+                              setShowProductPicker(false);
+                            }}
+                          >
+                            <View style={styles.dropdownItemContent}>
+                              <Text style={[
+                                styles.dropdownItemText,
+                                selectedProduct === product.id && styles.dropdownItemTextActive
+                              ]}>
+                                {product.name}
+                              </Text>
+                              {product.unit && (
+                                <Text style={styles.dropdownItemUnit}>
+                                  {product.unit}
+                                </Text>
+                              )}
+                            </View>
+                            {selectedProduct === product.id && (
+                              <Text style={styles.checkmark}>✓</Text>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -737,29 +774,78 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e0e0e0',
   },
-  pickerContainer: {
-    marginBottom: 8,
-  },
-  productChip: {
+  dropdownButton: {
     backgroundColor: '#f5f5f5',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
+    borderRadius: 8,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  productChipActive: {
-    backgroundColor: '#4caf50',
-    borderColor: '#4caf50',
-  },
-  productChipText: {
+  dropdownButtonText: {
     fontSize: 14,
     color: '#333',
+    flex: 1,
   },
-  productChipTextActive: {
-    color: '#fff',
+  dropdownPlaceholder: {
+    color: '#999',
+  },
+  dropdownIcon: {
+    transform: [{ rotate: '0deg' }],
+  },
+  dropdownIconOpen: {
+    transform: [{ rotate: '180deg' }],
+  },
+  dropdownList: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 16,
+    maxHeight: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownScroll: {
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#e8f5e9',
+  },
+  dropdownItemContent: {
+    flex: 1,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 2,
+  },
+  dropdownItemTextActive: {
+    color: '#4caf50',
     fontWeight: '600',
+  },
+  dropdownItemUnit: {
+    fontSize: 12,
+    color: '#999',
+  },
+  checkmark: {
+    fontSize: 18,
+    color: '#4caf50',
+    fontWeight: 'bold',
   },
   submitButton: {
     backgroundColor: '#4caf50',
