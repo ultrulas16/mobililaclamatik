@@ -16,14 +16,6 @@ const STATUS_COLORS = {
   cancelled: '#ef4444',
 };
 
-const STATUS_LABELS = {
-  pending: 'Bekliyor',
-  assigned: 'Atandı',
-  in_progress: 'Devam Ediyor',
-  completed: 'Tamamlandı',
-  cancelled: 'İptal',
-};
-
 const ITEMS_PER_PAGE = 10;
 
 export default function OperatorVisits() {
@@ -55,6 +47,17 @@ export default function OperatorVisits() {
     }
   }, [operatorId, filterStatus, selectedMonth, selectedYear]);
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'pending': return t('pending');
+      case 'assigned': return t('assigned');
+      case 'in_progress': return t('inProgress');
+      case 'completed': return t('completed');
+      case 'cancelled': return t('cancelled');
+      default: return status;
+    }
+  };
+
   const loadOperatorData = async () => {
     try {
       const { data, error } = await supabase
@@ -68,7 +71,7 @@ export default function OperatorVisits() {
         setOperatorId(data.id);
       }
     } catch (error: any) {
-      Alert.alert('Hata', error.message);
+      Alert.alert(t('error'), error.message);
     }
   };
 
@@ -119,7 +122,7 @@ export default function OperatorVisits() {
       setVisits(formattedData as any);
     } catch (error: any) {
       console.error('Error loading visits:', error);
-      Alert.alert('Hata', error.message);
+      Alert.alert(t('error'), error.message);
     } finally {
       setLoading(false);
     }
@@ -134,12 +137,12 @@ export default function OperatorVisits() {
 
       if (error) throw error;
 
-      Alert.alert('Başarılı', 'Ziyaret iptal edildi');
+      Alert.alert(t('success'), t('visitCancelled'));
       loadVisits();
       setCancelModalVisible(false);
       setVisitToCancel(null);
     } catch (error: any) {
-      Alert.alert('Hata', error.message);
+      Alert.alert(t('error'), error.message);
     }
   };
 
@@ -168,10 +171,6 @@ export default function OperatorVisits() {
 
   const getStatusBadgeColor = (status: string) => {
     return STATUS_COLORS[status as keyof typeof STATUS_COLORS] || '#999';
-  };
-
-  const getStatusLabel = (status: string) => {
-    return STATUS_LABELS[status as keyof typeof STATUS_LABELS] || status;
   };
 
   const changeMonth = (direction: 'prev' | 'next') => {
@@ -264,7 +263,7 @@ export default function OperatorVisits() {
             <ChevronLeft size={24} color="#059669" />
           </TouchableOpacity>
           <Text style={styles.calendarMonth}>
-            {currentDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+            {currentDate.toLocaleDateString(user?.user_metadata?.language || 'tr-TR', { month: 'long', year: 'numeric' })}
           </Text>
           <TouchableOpacity onPress={() => changeMonth('next')} style={styles.monthButton}>
             <ChevronRight size={24} color="#059669" />
@@ -274,15 +273,15 @@ export default function OperatorVisits() {
         <View style={styles.legendContainer}>
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: '#4caf50' }]} />
-            <Text style={styles.legendText}>Tamamlandı</Text>
+            <Text style={styles.legendText}>{t('completed')}</Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: '#ff9800' }]} />
-            <Text style={styles.legendText}>Bekliyor</Text>
+            <Text style={styles.legendText}>{t('pending')}</Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: '#ef4444' }]} />
-            <Text style={styles.legendText}>İptal</Text>
+            <Text style={styles.legendText}>{t('cancelled')}</Text>
           </View>
         </View>
 
@@ -293,7 +292,7 @@ export default function OperatorVisits() {
         </View>
         <View style={styles.calendarGrid}>{days}</View>
 
-        <Text style={styles.sectionTitle}>Ziyaretler ({filteredVisits.length})</Text>
+        <Text style={styles.sectionTitle}>{t('visits')} ({filteredVisits.length})</Text>
         {paginatedVisits.map(visit => renderVisitCard(visit))}
 
         {totalPages > 1 && (
@@ -306,7 +305,7 @@ export default function OperatorVisits() {
               <ChevronLeft size={20} color={currentPage === 1 ? '#ccc' : '#059669'} />
             </TouchableOpacity>
             <Text style={styles.paginationText}>
-              Sayfa {currentPage} / {totalPages}
+              {t('page')} {currentPage} / {totalPages}
             </Text>
             <TouchableOpacity
               style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
@@ -373,7 +372,7 @@ export default function OperatorVisits() {
                 router.push(`/operator/visit-details?visitId=${visit.id}`);
               }}
             >
-              <Text style={styles.startVisitButtonText}>Ziyarete Başla</Text>
+              <Text style={styles.startVisitButtonText}>{t('startVisit')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.cancelButton}
@@ -408,28 +407,28 @@ export default function OperatorVisits() {
       <>
         {todayVisits.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Bugünkü Ziyaretler</Text>
+            <Text style={styles.sectionTitle}>{t('todayVisits')}</Text>
             {todayVisits.map(visit => renderVisitCard(visit))}
           </View>
         )}
 
         {upcomingVisits.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Yaklaşan Ziyaretler</Text>
+            <Text style={styles.sectionTitle}>{t('upcomingVisits')}</Text>
             {upcomingVisits.map(visit => renderVisitCard(visit))}
           </View>
         )}
 
         {completedVisits.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Tamamlanan Ziyaretler</Text>
+            <Text style={styles.sectionTitle}>{t('completedVisits')}</Text>
             {completedVisits.map(visit => renderVisitCard(visit))}
           </View>
         )}
 
         {cancelledVisits.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>İptal Edilen Ziyaretler</Text>
+            <Text style={styles.sectionTitle}>{t('cancelledVisits')}</Text>
             {cancelledVisits.map(visit => renderVisitCard(visit))}
           </View>
         )}
@@ -438,7 +437,7 @@ export default function OperatorVisits() {
           <View style={styles.emptyState}>
             <Calendar size={48} color="#ccc" />
             <Text style={styles.emptyText}>
-              {searchQuery ? 'Ziyaret bulunamadı' : 'Bu ayda ziyaret yok'}
+              {searchQuery ? t('noVisitsFound') : t('noVisitsThisMonth')}
             </Text>
           </View>
         )}
@@ -453,7 +452,7 @@ export default function OperatorVisits() {
               <ChevronLeft size={20} color={currentPage === 1 ? '#ccc' : '#059669'} />
             </TouchableOpacity>
             <Text style={styles.paginationText}>
-              Sayfa {currentPage} / {totalPages}
+              {t('page')} {currentPage} / {totalPages}
             </Text>
             <TouchableOpacity
               style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
@@ -472,7 +471,7 @@ export default function OperatorVisits() {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text>Yükleniyor...</Text>
+          <Text>{t('loading')}</Text>
         </View>
       </View>
     );
@@ -484,7 +483,7 @@ export default function OperatorVisits() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ziyaretlerim</Text>
+        <Text style={styles.headerTitle}>{t('myVisits')}</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => router.push('/operator/new-visit')}
@@ -497,7 +496,7 @@ export default function OperatorVisits() {
         <Search size={20} color="#999" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Müşteri veya şube ara..."
+          placeholder={t('searchPlaceholder')}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -514,14 +513,14 @@ export default function OperatorVisits() {
           onPress={() => setViewMode('list')}
         >
           <FileText size={20} color={viewMode === 'list' ? '#fff' : '#059669'} />
-          <Text style={[styles.viewToggleText, viewMode === 'list' && styles.viewToggleTextActive]}>Liste</Text>
+          <Text style={[styles.viewToggleText, viewMode === 'list' && styles.viewToggleTextActive]}>{t('listView')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.viewToggleButton, viewMode === 'calendar' && styles.viewToggleButtonActive]}
           onPress={() => setViewMode('calendar')}
         >
           <CalendarDays size={20} color={viewMode === 'calendar' ? '#fff' : '#059669'} />
-          <Text style={[styles.viewToggleText, viewMode === 'calendar' && styles.viewToggleTextActive]}>Takvim</Text>
+          <Text style={[styles.viewToggleText, viewMode === 'calendar' && styles.viewToggleTextActive]}>{t('calendarView')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -532,7 +531,7 @@ export default function OperatorVisits() {
             onPress={() => setFilterStatus('all')}
           >
             <Text style={[styles.filterButtonText, filterStatus === 'all' && styles.filterButtonTextActive]}>
-              Tümü ({visits.length})
+              {t('all')} ({visits.length})
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -540,7 +539,7 @@ export default function OperatorVisits() {
             onPress={() => setFilterStatus('pending')}
           >
             <Text style={[styles.filterButtonText, filterStatus === 'pending' && styles.filterButtonTextActive]}>
-              Bekliyor
+              {t('pending')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -548,7 +547,7 @@ export default function OperatorVisits() {
             onPress={() => setFilterStatus('in_progress')}
           >
             <Text style={[styles.filterButtonText, filterStatus === 'in_progress' && styles.filterButtonTextActive]}>
-              Devam Ediyor
+              {t('inProgress')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -556,7 +555,7 @@ export default function OperatorVisits() {
             onPress={() => setFilterStatus('completed')}
           >
             <Text style={[styles.filterButtonText, filterStatus === 'completed' && styles.filterButtonTextActive]}>
-              Tamamlandı
+              {t('completed')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -564,7 +563,7 @@ export default function OperatorVisits() {
             onPress={() => setFilterStatus('cancelled')}
           >
             <Text style={[styles.filterButtonText, filterStatus === 'cancelled' && styles.filterButtonTextActive]}>
-              İptal
+              {t('cancelled')}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -582,8 +581,8 @@ export default function OperatorVisits() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Ziyareti İptal Et</Text>
-            <Text style={styles.modalText}>Bu ziyareti iptal etmek istediğinizden emin misiniz?</Text>
+            <Text style={styles.modalTitle}>{t('cancelVisit')}</Text>
+            <Text style={styles.modalText}>{t('confirmCancelVisitMessage')}</Text>
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.modalButtonCancel}
@@ -592,13 +591,13 @@ export default function OperatorVisits() {
                   setVisitToCancel(null);
                 }}
               >
-                <Text style={styles.modalButtonCancelText}>Vazgeç</Text>
+                <Text style={styles.modalButtonCancelText}>{t('cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalButtonConfirm}
                 onPress={() => visitToCancel && handleCancelVisit(visitToCancel)}
               >
-                <Text style={styles.modalButtonConfirmText}>İptal Et</Text>
+                <Text style={styles.modalButtonConfirmText}>{t('confirmCancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -627,29 +626,29 @@ export default function OperatorVisits() {
                 <View style={styles.dayModalStats}>
                   <View style={styles.dayModalStatItem}>
                     <Text style={styles.dayModalStatNumber}>{selectedDayData.visits.length}</Text>
-                    <Text style={styles.dayModalStatLabel}>Toplam</Text>
+                    <Text style={styles.dayModalStatLabel}>{t('total')}</Text>
                   </View>
                   <View style={styles.dayModalStatItem}>
                     <Text style={[styles.dayModalStatNumber, { color: '#4caf50' }]}>
                       {selectedDayData.visits.filter(v => v.status === 'completed').length}
                     </Text>
-                    <Text style={styles.dayModalStatLabel}>Tamamlandı</Text>
+                    <Text style={styles.dayModalStatLabel}>{t('completed')}</Text>
                   </View>
                   <View style={styles.dayModalStatItem}>
                     <Text style={[styles.dayModalStatNumber, { color: '#ff9800' }]}>
                       {selectedDayData.visits.filter(v => v.status === 'pending' || v.status === 'assigned' || v.status === 'in_progress').length}
                     </Text>
-                    <Text style={styles.dayModalStatLabel}>Bekliyor</Text>
+                    <Text style={styles.dayModalStatLabel}>{t('pending')}</Text>
                   </View>
                   <View style={styles.dayModalStatItem}>
                     <Text style={[styles.dayModalStatNumber, { color: '#ef4444' }]}>
                       {selectedDayData.visits.filter(v => v.status === 'cancelled').length}
                     </Text>
-                    <Text style={styles.dayModalStatLabel}>İptal</Text>
+                    <Text style={styles.dayModalStatLabel}>{t('cancelled')}</Text>
                   </View>
                 </View>
 
-                <Text style={styles.dayModalSectionTitle}>Ziyaretler</Text>
+                <Text style={styles.dayModalSectionTitle}>{t('visits')}</Text>
                 {selectedDayData.visits.map(visit => renderVisitCard(visit))}
               </ScrollView>
             )}
