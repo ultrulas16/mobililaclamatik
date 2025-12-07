@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Plus, User, Mail, Phone, Building, Trash2, Upload, Download } from 'lucide-react-native';
+import { ArrowLeft, Plus, User, Mail, Phone, Building, Trash2, Upload, Download, Edit2 } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -26,6 +26,7 @@ export default function ManageCustomers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -61,19 +62,12 @@ export default function ManageCustomers() {
 
   const handleAddCustomer = async () => {
     if (!email || !password || !fullName || !companyName) {
-      Alert.alert('Error', 'Please fill all required fields');
+      Alert.alert('Hata', 'Lütfen tüm zorunlu alanları doldurun');
       return;
     }
 
     setLoading(true);
     try {
-      console.log('Creating customer with data:', {
-        email,
-        full_name: fullName,
-        company_name: companyName,
-        created_by_company_id: profile?.company_id,
-      });
-
       const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-customer`, {
         method: 'POST',
         headers: {
@@ -91,40 +85,102 @@ export default function ManageCustomers() {
       });
 
       const result = await response.json();
-      console.log('Customer creation response:', result);
 
       if (!response.ok) {
-        console.error('Customer creation failed:', result);
-        throw new Error(result.error || 'Failed to add customer');
+        throw new Error(result.error || 'Müşteri eklenemedi');
       }
 
-      Alert.alert('Success', 'Customer added successfully');
-      setShowForm(false);
-      setEmail('');
-      setPassword('');
-      setFullName('');
-      setPhone('');
-      setCompanyName('');
-      // Wait a bit before reloading to ensure data is committed
+      Alert.alert('Başarılı', 'Müşteri başarıyla eklendi');
+      resetForm();
       setTimeout(() => {
         loadCustomers();
       }, 1000);
     } catch (error: any) {
-      console.error('Error adding customer:', error);
-      Alert.alert('Error', error.message || 'Failed to add customer');
+      Alert.alert('Hata', error.message || 'Müşteri eklenemedi');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleEditCustomer = async () => {
+    if (!editingCustomer || !fullName || !companyName) {
+      Alert.alert('Hata', 'Lütfen tüm zorunlu alanları doldurun');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error: customerError } = await supabase
+        .from('customers')
+        .update({
+          company_name: companyName,
+        })
+        .eq('id', editingCustomer.id);
+
+      if (customerError) throw customerError;
+
+      const updateData: any = {};
+      if (fullName) updateData.full_name = fullName;
+      if (phone) updateData.phone = phone;
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', editingCustomer.profile_id);
+
+      if (profileError) throw profileError;
+
+      if (password) {
+        const passwordBase64 = btoa(password);
+        const { error: passwordError } = await supabase
+          .from('user_passwords')
+          .upsert({
+            profile_id: editingCustomer.profile_id,
+            encrypted_password: passwordBase64,
+            created_by: profile?.id,
+          });
+
+        if (passwordError) throw passwordError;
+      }
+
+      Alert.alert('Başarılı', 'Müşteri başarıyla güncellendi');
+      resetForm();
+      loadCustomers();
+    } catch (error: any) {
+      Alert.alert('Hata', error.message || 'Müşteri güncellenemedi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEdit = (customer: Customer) => {
+    setEditingCustomer(customer);
+    setFullName(customer.profile?.full_name || '');
+    setEmail(customer.profile?.email || '');
+    setPhone(customer.profile?.phone || '');
+    setCompanyName(customer.company_name);
+    setPassword('');
+    setShowForm(true);
+  };
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingCustomer(null);
+    setEmail('');
+    setPassword('');
+    setFullName('');
+    setPhone('');
+    setCompanyName('');
+  };
+
   const handleDeleteCustomer = async (customerId: string, profileId: string) => {
     Alert.alert(
-      'Delete Customer',
-      'Are you sure you want to delete this customer?',
+      'Müşteri Sil',
+      'Bu müşteriyi silmek istediğinizden emin misiniz?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'İptal', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Sil',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -135,16 +191,12 @@ export default function ManageCustomers() {
 
               if (customerError) throw customerError;
 
-              const { error: profileError } = await supabase
-                .from('profiles')
-                .delete()
-                .eq('id', profileId);
-
-              if (profileError) throw profileError;
+              await supabase.from('user_passwords').delete().eq('profile_id', profileId);
+              await supabase.from('profiles').delete().eq('id', profileId);
 
               loadCustomers();
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete customer');
+              Alert.alert('Hata', error.message || 'Müşteri silinemedi');
             }
           },
         },
@@ -338,7 +390,7 @@ export default function ManageCustomers() {
           <ArrowLeft size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Müşterileri Yönet</Text>
-        <TouchableOpacity onPress={() => setShowForm(!showForm)} style={styles.addButton}>
+        <TouchableOpacity onPress={() => { resetForm(); setShowForm(true); }} style={styles.addButton}>
           <Plus size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -364,75 +416,7 @@ export default function ManageCustomers() {
             </Text>
           </TouchableOpacity>
         </View>
-        {showForm && (
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Yeni Müşteri Ekle</Text>
 
-            <View style={styles.inputContainer}>
-              <User size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Ad Soyad"
-                value={fullName}
-                onChangeText={setFullName}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Building size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Şirket Adı"
-                value={companyName}
-                onChangeText={setCompanyName}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Mail size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="E-posta"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Phone size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Telefon"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Mail size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Şifre"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-              onPress={handleAddCustomer}
-              disabled={loading}
-            >
-              <Text style={styles.submitButtonText}>
-                {loading ? 'Ekleniyor...' : 'Müşteri Ekle'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         <View style={styles.listContainer}>
           <Text style={styles.listTitle}>Müşteriler ({customers.length})</Text>
@@ -449,17 +433,120 @@ export default function ManageCustomers() {
                     <Text style={styles.customerDetail}>{customer.profile.phone}</Text>
                   )}
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleDeleteCustomer(customer.id, customer.profile_id)}
-                  style={styles.deleteButton}
-                >
-                  <Trash2 size={20} color="#f44336" />
-                </TouchableOpacity>
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity
+                    onPress={() => startEdit(customer)}
+                    style={styles.editButton}
+                  >
+                    <Edit2 size={20} color="#2196f3" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteCustomer(customer.id, customer.profile_id)}
+                    style={styles.deleteButton}
+                  >
+                    <Trash2 size={20} color="#f44336" />
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
         </View>
       </ScrollView>
+
+      <Modal visible={showForm} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <ScrollView>
+              <Text style={styles.formTitle}>
+                {editingCustomer ? 'Müşteriyi Düzenle' : 'Yeni Müşteri Ekle'}
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <User size={20} color="#666" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ad Soyad"
+                  value={fullName}
+                  onChangeText={setFullName}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Building size={20} color="#666" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Şirket Adı"
+                  value={companyName}
+                  onChangeText={setCompanyName}
+                />
+              </View>
+
+              {!editingCustomer && (
+                <View style={styles.inputContainer}>
+                  <Mail size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="E-posta"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              )}
+
+              {editingCustomer && (
+                <View style={styles.inputContainer}>
+                  <Mail size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    placeholder="E-posta"
+                    value={email}
+                    editable={false}
+                  />
+                </View>
+              )}
+
+              <View style={styles.inputContainer}>
+                <Phone size={20} color="#666" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Telefon"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Mail size={20} color="#666" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder={editingCustomer ? 'Yeni Şifre (boş bırakın değiştirmezseniz)' : 'Şifre'}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                />
+              </View>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.cancelButton} onPress={resetForm}>
+                  <Text style={styles.cancelButtonText}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                  onPress={editingCustomer ? handleEditCustomer : handleAddCustomer}
+                  disabled={loading}
+                >
+                  <Text style={styles.submitButtonText}>
+                    {loading ? 'Kaydediliyor...' : editingCustomer ? 'Güncelle' : 'Ekle'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -595,6 +682,13 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 2,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    padding: 8,
+  },
   deleteButton: {
     padding: 8,
   },
@@ -603,6 +697,38 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 16,
     paddingVertical: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#e0e0e0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  disabledInput: {
+    color: '#999',
   },
   excelActionsContainer: {
     flexDirection: 'row',

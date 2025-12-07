@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Plus, User, Mail, Phone, MapPin, Building, Trash2, CreditCard as Edit2, Search } from 'lucide-react-native';
+import { ArrowLeft, Plus, User, Mail, Phone, MapPin, Building, Trash2, CreditCard as Edit2, Search, Download, Upload } from 'lucide-react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as XLSX from 'xlsx';
 
 interface Customer {
   id: string;
@@ -244,6 +248,209 @@ export default function ManageCustomerBranches() {
     setAddress('');
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const templateData = [
+        {
+          'Müşteri Şirketi': 'ABC Restoran',
+          'Şube Adı': 'ABC Restoran - Merkez',
+          'Adres': 'Atatürk Cad. No:123 Kadıköy/İstanbul',
+          'Şube Telefonu': '02161234567',
+          'Yetkili Ad Soyad': 'Ahmet Yılmaz',
+          'Yetkili E-posta': 'ahmet@abcrestoran.com',
+          'Yetkili Telefon': '05321234567',
+          'Şifre': 'Sifre123!'
+        },
+        {
+          'Müşteri Şirketi': 'XYZ Otel',
+          'Şube Adı': 'XYZ Otel - Şişli Şubesi',
+          'Adres': 'Cumhuriyet Cad. No:456 Şişli/İstanbul',
+          'Şube Telefonu': '02129876543',
+          'Yetkili Ad Soyad': 'Ayşe Demir',
+          'Yetkili E-posta': 'ayse@xyzotel.com',
+          'Yetkili Telefon': '05439876543',
+          'Şifre': 'Guvenli456!'
+        },
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(templateData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Şubeler');
+
+      if (Platform.OS === 'web') {
+        const wbout = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'sube_sablonu.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        Alert.alert('Başarılı', 'Şablon dosyası indirildi');
+      } else {
+        const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+        const fileUri = FileSystem.cacheDirectory + 'sube_sablonu.xlsx';
+        await FileSystem.writeAsStringAsync(fileUri, wbout, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        await Sharing.shareAsync(fileUri);
+        Alert.alert('Başarılı', 'Şablon dosyası indirildi');
+      }
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      Alert.alert('Hata', 'Şablon dosyası indirilemedi: ' + error);
+    }
+  };
+
+  const processExcelData = async (workbook: XLSX.WorkBook) => {
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) {
+      Alert.alert('Hata', 'Excel dosyası boş');
+      return;
+    }
+
+    setLoading(true);
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    for (const row of data as any[]) {
+      try {
+        const customerCompany = row['Müşteri Şirketi'] || row['Customer Company'];
+        const branchName = row['Şube Adı'] || row['Branch Name'];
+        const address = row['Adres'] || row['Address'];
+        const branchPhone = row['Şube Telefonu'] || row['Branch Phone'];
+        const managerName = row['Yetkili Ad Soyad'] || row['Manager Name'];
+        const managerEmail = row['Yetkili E-posta'] || row['Manager Email'];
+        const managerPhone = row['Yetkili Telefon'] || row['Manager Phone'];
+        const password = row['Şifre'] || row['Password'];
+
+        if (!customerCompany || !branchName || !address || !managerName || !managerEmail || !password) {
+          errors.push(`Satır atlandı: Eksik bilgi - ${managerEmail || 'bilinmeyen'}`);
+          errorCount++;
+          continue;
+        }
+
+        const { data: customerData, error: customerError } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('company_name', customerCompany)
+          .eq('created_by_company_id', profile?.company_id)
+          .maybeSingle();
+
+        if (customerError || !customerData) {
+          errors.push(`${managerEmail}: Müşteri bulunamadı - ${customerCompany}`);
+          errorCount++;
+          continue;
+        }
+
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/create-branch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabase.supabaseAnonKey}`,
+          },
+          body: JSON.stringify({
+            email: managerEmail,
+            password,
+            full_name: managerName,
+            phone: managerPhone || '',
+            branch_name: branchName,
+            address,
+            customer_id: customerData.id,
+            created_by_company_id: profile?.company_id,
+          }),
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          const result = await response.json();
+          errors.push(`${managerEmail}: ${result.error || 'Bilinmeyen hata'}`);
+          errorCount++;
+        }
+      } catch (error: any) {
+        errors.push(`Hata: ${error.message}`);
+        errorCount++;
+      }
+    }
+
+    setLoading(false);
+    loadBranches();
+
+    let message = `Başarılı: ${successCount}\nHatalı: ${errorCount}`;
+    if (errors.length > 0) {
+      message += '\n\nHatalar:\n' + errors.slice(0, 5).join('\n');
+      if (errors.length > 5) {
+        message += `\n... ve ${errors.length - 5} hata daha`;
+      }
+    }
+
+    Alert.alert('İçe Aktarma Tamamlandı', message);
+  };
+
+  const handleImportExcel = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls';
+        input.onchange = async (e: any) => {
+          try {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (event: any) => {
+              try {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                await processExcelData(workbook);
+              } catch (error: any) {
+                console.error('Error reading Excel:', error);
+                Alert.alert('Hata', 'Excel dosyası okunamadı: ' + error.message);
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          } catch (error: any) {
+            console.error('Error handling file:', error);
+            Alert.alert('Hata', 'Dosya işlenemedi: ' + error.message);
+          }
+        };
+        input.click();
+      } else {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel'
+          ],
+          copyToCacheDirectory: true,
+        });
+
+        if (result.canceled) {
+          return;
+        }
+
+        const fileUri = result.assets[0].uri;
+        const fileContent = await FileSystem.readAsStringAsync(fileUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const workbook = XLSX.read(fileContent, { type: 'base64' });
+        await processExcelData(workbook);
+      }
+    } catch (error: any) {
+      setLoading(false);
+      console.error('Error importing Excel:', error);
+      Alert.alert('Hata', 'Excel dosyası okunamadı: ' + error.message);
+    }
+  };
+
   const filteredBranches = branches.filter(branch =>
     branch.branch_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     branch.customer?.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -263,6 +470,27 @@ export default function ManageCustomerBranches() {
       </View>
 
       <ScrollView style={styles.content}>
+        <View style={styles.excelActionsContainer}>
+          <TouchableOpacity
+            style={styles.excelButton}
+            onPress={handleDownloadTemplate}
+          >
+            <Download size={20} color="#fff" />
+            <Text style={styles.excelButtonText}>Şablon İndir</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.excelButton, styles.excelButtonImport]}
+            onPress={handleImportExcel}
+            disabled={loading}
+          >
+            <Upload size={20} color="#fff" />
+            <Text style={styles.excelButtonText}>
+              {loading ? 'Yükleniyor...' : 'Excel İçe Aktar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.searchContainer}>
           <Search size={20} color="#666" style={styles.searchIcon} />
           <TextInput
@@ -689,5 +917,29 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  excelActionsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  excelButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4caf50',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  excelButtonImport: {
+    backgroundColor: '#2196f3',
+  },
+  excelButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
