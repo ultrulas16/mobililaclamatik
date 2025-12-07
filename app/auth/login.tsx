@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { ArrowLeft, Mail, Lock } from 'lucide-react-native';
+import { LanguageSelector } from '@/components/LanguageSelector'; // Eklendi
 import * as WebBrowser from 'expo-web-browser';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -31,28 +32,17 @@ export default function Login() {
 
   useEffect(() => {
     if (authLoading) {
-      console.log('Auth still loading on login page...');
       return;
     }
 
     if (user && profile) {
-      console.log('User already logged in with profile, redirecting from login');
       router.replace('/');
-    } else if (user && !profile) {
-      // OAuth user without profile - wait for profile creation
-      console.log('OAuth user without profile detected on login page');
-      // Don't redirect, let auth context handle it
     }
   }, [user, profile, authLoading]);
 
   const handleLogin = async () => {
     if (!email || !password) {
-      setError('Lütfen tüm alanları doldurun');
-      return;
-    }
-
-    if (!email.includes('@')) {
-      setError('Geçerli bir email adresi girin');
+      setError(t('fillAllFields')); // Çeviri kullanıldı
       return;
     }
 
@@ -60,9 +50,7 @@ export default function Login() {
     setError('');
 
     try {
-      console.log('[LOGIN] Attempting login...');
       await signIn(email, password);
-      console.log('[LOGIN] Login successful, redirecting...');
       setTimeout(() => {
         router.replace('/');
       }, 500);
@@ -86,7 +74,6 @@ export default function Login() {
     setError('');
 
     try {
-      console.log('[LOGIN] Starting Google OAuth...');
       await signInWithGoogle();
     } catch (err: any) {
       console.error('[LOGIN] Google OAuth error:', err);
@@ -105,9 +92,16 @@ export default function Login() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ArrowLeft size={24} color="#fff" />
-          </TouchableOpacity>
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <ArrowLeft size={24} color="#fff" />
+            </TouchableOpacity>
+            
+            {/* Dil Seçici Eklendi */}
+            <View style={styles.languageContainer}>
+              <LanguageSelector />
+            </View>
+          </View>
 
           <View style={styles.header}>
             <Text style={styles.title}>{t('login')}</Text>
@@ -194,10 +188,6 @@ export default function Login() {
                 <Text style={styles.registerLinkTextBold}> {t('register')}</Text>
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-            >
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -218,6 +208,12 @@ const styles = StyleSheet.create({
     paddingTop: 44,
     paddingBottom: 40,
   },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   backButton: {
     width: 40,
     height: 40,
@@ -225,10 +221,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 30,
+  },
+  languageContainer: {
+    // Dil seçici için stil
   },
   header: {
     marginBottom: 40,
+    marginTop: 10,
   },
   title: {
     fontSize: 36,
@@ -369,20 +368,6 @@ const styles = StyleSheet.create({
   googleButtonText: {
     color: '#333',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  diagnosticsLink: {
-    marginTop: 20,
-    padding: 12,
-    backgroundColor: '#fff3e0',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ffb74d',
-  },
-  diagnosticsText: {
-    color: '#e65100',
-    fontSize: 13,
-    textAlign: 'center',
     fontWeight: '600',
   },
 });
