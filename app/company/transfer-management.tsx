@@ -56,6 +56,7 @@ export default function TransferManagement() {
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Buton loading durumu
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -98,7 +99,7 @@ export default function TransferManagement() {
         .maybeSingle();
 
       if (!warehouse) {
-        Alert.alert('Uyarı', 'Ana depo bulunamadı');
+        Alert.alert('Uyarı', 'Ana depo bulunamadı. Lütfen önce şirket ayarlarından deponuzu oluşturun.');
         return;
       }
 
@@ -211,6 +212,8 @@ export default function TransferManagement() {
   };
 
   const handleCreateTransfer = async () => {
+    if (isSubmitting) return;
+
     if (!selectedOperator || !selectedProduct || !quantity) {
       Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
       return;
@@ -222,22 +225,33 @@ export default function TransferManagement() {
       return;
     }
 
+    // Operatör kontrolü
     const operator = operators.find(op => op.id === selectedOperator);
-    if (!operator) return;
+    if (!operator) {
+      Alert.alert('Hata', 'Seçilen operatör bilgisine ulaşılamadı.');
+      return;
+    }
 
-    let targetWarehouseId = operator.warehouse_id;
+    // Company ID kontrolü
+    if (!companyId) {
+      Alert.alert('Hata', 'Firma bilgisi eksik. Lütfen sayfayı yenileyin.');
+      return;
+    }
 
     try {
+      setIsSubmitting(true);
+      let targetWarehouseId = operator.warehouse_id;
+
       // Eğer operatörün deposu yoksa oluştur
       if (!targetWarehouseId) {
-        // DUZELTME: company_id olarak kullanıcının ID'sini değil, firmanın ID'sini (companyId) kullanıyoruz.
-        // Bu sayede RLS politikaları ve veri ilişkileri doğru çalışır.
+        console.log('Operatör deposu oluşturuluyor...', { operatorId: operator.id, companyId });
+        
         const { data: newWh, error: whError } = await supabase
           .from('warehouses')
           .insert({
             name: `${operator.full_name} Deposu`,
             warehouse_type: 'operator',
-            company_id: companyId, // <-- user?.id yerine companyId kullanıldı
+            company_id: companyId, // Düzeltilmiş: user.id değil companyId
             operator_id: operator.id,
             location: 'Mobil',
             is_active: true
@@ -245,13 +259,25 @@ export default function TransferManagement() {
           .select('id')
           .single();
         
-        if (whError) throw whError;
+        if (whError) {
+          console.error('Depo oluşturma hatası:', whError);
+          throw new Error(`Depo oluşturulamadı: ${whError.message}`);
+        }
+        
         targetWarehouseId = newWh.id;
         
+        // State güncelle
         setOperators(prev => prev.map(op => 
           op.id === operator.id ? { ...op, warehouse_id: newWh.id } : op
         ));
       }
+
+      console.log('Transfer başlatılıyor...', {
+        from: mainWarehouseId,
+        to: targetWarehouseId,
+        product: selectedProduct,
+        qty
+      });
 
       // 1. ADIM: Transferi 'pending' olarak oluştur
       const { data: transferData, error: insertError } = await supabase
@@ -268,9 +294,14 @@ export default function TransferManagement() {
         .select('id')
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Transfer insert hatası:', insertError);
+        throw insertError;
+      }
 
-      // 2. ADIM: Transferi onayla (Otomatik trigger stokları düşecek ve statüyü completed yapacak)
+      console.log('Transfer oluşturuldu, onaylanıyor...', transferData.id);
+
+      // 2. ADIM: Transferi onayla
       const { error: updateError } = await supabase
         .from('warehouse_transfers')
         .update({
@@ -280,22 +311,27 @@ export default function TransferManagement() {
         })
         .eq('id', transferData.id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Transfer onay hatası:', updateError);
+        throw updateError;
+      }
 
-      Alert.alert('Başarılı', 'Transfer oluşturuldu ve stoklar güncellendi');
+      Alert.alert('Başarılı', 'Transfer başarıyla oluşturuldu.');
       setModalVisible(false);
       resetForm();
-      // Listeyi yenile
       loadTransfers(mainWarehouseId);
+
     } catch (error: any) {
-      console.error('Create transfer error:', error);
+      console.error('Create transfer error FULL:', error);
       if (error.message?.includes('yeterli stok')) {
         Alert.alert('Stok Yetersiz', 'Ana depoda yeterli stok bulunmuyor');
       } else if (error.message?.includes('bulunamadı')) {
-        Alert.alert('Ürün Yok', 'Ana depoda bu ürün bulunmuyor');
+        Alert.alert('Hata', 'İlgili kayıt bulunamadı: ' + error.message);
       } else {
-        Alert.alert('Hata', 'Transfer işlemi başarısız: ' + error.message);
+        Alert.alert('İşlem Başarısız', error.message || 'Bilinmeyen bir hata oluştu');
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -366,44 +402,31 @@ export default function TransferManagement() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return '#ff9800';
+      case 'pending': return '#ff9800';
       case 'approved':
-      case 'completed':
-        return '#4caf50';
-      case 'rejected':
-        return '#ef4444';
-      default:
-        return '#999';
+      case 'completed': return '#4caf50';
+      case 'rejected': return '#ef4444';
+      default: return '#999';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'Beklemede';
-      case 'approved':
-        return 'Onaylandı';
-      case 'completed':
-        return 'Tamamlandı';
-      case 'rejected':
-        return 'Reddedildi';
-      default:
-        return status;
+      case 'pending': return 'Beklemede';
+      case 'approved': return 'Onaylandı';
+      case 'completed': return 'Tamamlandı';
+      case 'rejected': return 'Reddedildi';
+      default: return status;
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'pending':
-        return <Clock size={18} color="#fff" />;
+      case 'pending': return <Clock size={18} color="#fff" />;
       case 'approved':
-      case 'completed':
-        return <CheckCircle size={18} color="#fff" />;
-      case 'rejected':
-        return <XCircle size={18} color="#fff" />;
-      default:
-        return <Clock size={18} color="#fff" />;
+      case 'completed': return <CheckCircle size={18} color="#fff" />;
+      case 'rejected': return <XCircle size={18} color="#fff" />;
+      default: return <Clock size={18} color="#fff" />;
     }
   };
 
@@ -517,13 +540,13 @@ export default function TransferManagement() {
         visible={modalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => !isSubmitting && setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Yeni Transfer</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={() => !isSubmitting && setModalVisible(false)}>
                 <X size={24} color="#333" />
               </TouchableOpacity>
             </View>
@@ -539,6 +562,7 @@ export default function TransferManagement() {
                       selectedOperator === op.id && styles.selectItemActive,
                     ]}
                     onPress={() => setSelectedOperator(op.id)}
+                    disabled={isSubmitting}
                   >
                     <User
                       size={16}
@@ -569,6 +593,7 @@ export default function TransferManagement() {
                       selectedProduct === product.id && styles.selectItemActive,
                     ]}
                     onPress={() => setSelectedProduct(product.id)}
+                    disabled={isSubmitting}
                   >
                     <Package
                       size={16}
@@ -596,6 +621,7 @@ export default function TransferManagement() {
                 onChangeText={setQuantity}
                 placeholder="Örn: 10"
                 keyboardType="decimal-pad"
+                editable={!isSubmitting}
               />
 
               <Text style={styles.label}>Not (Opsiyonel)</Text>
@@ -606,13 +632,19 @@ export default function TransferManagement() {
                 placeholder="Transfer hakkında not"
                 multiline
                 numberOfLines={3}
+                editable={!isSubmitting}
               />
 
               <TouchableOpacity
-                style={styles.submitBtn}
+                style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}
                 onPress={handleCreateTransfer}
+                disabled={isSubmitting}
               >
-                <Text style={styles.submitBtnText}>Transfer Oluştur</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitBtnText}>Transfer Oluştur</Text>
+                )}
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -865,6 +897,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 24,
     marginBottom: 16,
+  },
+  submitBtnDisabled: {
+    opacity: 0.7,
+    backgroundColor: '#a5d6a7',
   },
   submitBtnText: {
     color: '#fff',
