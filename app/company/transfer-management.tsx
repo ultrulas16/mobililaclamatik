@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +23,7 @@ import {
   XCircle,
   Clock,
   User,
+  RefreshCw,
 } from 'lucide-react-native';
 
 interface Product {
@@ -56,7 +58,8 @@ export default function TransferManagement() {
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Buton loading durumu
+  const [refreshing, setRefreshing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -77,39 +80,7 @@ export default function TransferManagement() {
   const initialize = async () => {
     try {
       setLoading(true);
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('id', user?.id)
-        .single();
-
-      if (!profile?.company_id) {
-        Alert.alert('Hata', 'Firma bilgisi bulunamadı');
-        return;
-      }
-
-      setCompanyId(profile.company_id);
-
-      const { data: warehouse } = await supabase
-        .from('admin_warehouses')
-        .select('id')
-        .eq('company_id', profile.company_id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (!warehouse) {
-        Alert.alert('Uyarı', 'Ana depo bulunamadı. Lütfen önce şirket ayarlarından deponuzu oluşturun.');
-        return;
-      }
-
-      setMainWarehouseId(warehouse.id);
-
-      await Promise.all([
-        loadTransfers(warehouse.id),
-        loadOperators(profile.company_id),
-        loadProducts(profile.company_id),
-      ]);
+      await fetchInitialData();
     } catch (error: any) {
       console.error('Initialize error:', error);
       Alert.alert('Hata', error.message);
@@ -118,8 +89,54 @@ export default function TransferManagement() {
     }
   };
 
+  const fetchInitialData = async () => {
+    // 1. Profil ve Şirket Bilgisi
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('company_id')
+      .eq('id', user?.id)
+      .single();
+
+    if (!profile?.company_id) {
+      throw new Error('Firma bilgisi bulunamadı');
+    }
+
+    setCompanyId(profile.company_id);
+
+    // 2. Ana Depo Bilgisi
+    // admin_warehouses view olmayabilir, direkt warehouses'dan çekelim
+    const { data: warehouse, error: whError } = await supabase
+      .from('warehouses')
+      .select('id')
+      .eq('company_id', profile.company_id)
+      .eq('is_active', true)
+      // Ana depoyu bulmak için warehouse_type kontrolü veya sıralama yapabiliriz
+      // Genelde ilk oluşturulan depo ana depodur veya type='main' dir.
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (whError) throw whError;
+
+    if (!warehouse) {
+      Alert.alert('Uyarı', 'Ana depo bulunamadı. Lütfen şirket ayarlarından deponuzu oluşturun.');
+      return;
+    }
+
+    setMainWarehouseId(warehouse.id);
+
+    // 3. Diğer verileri paralel yükle
+    await Promise.all([
+      loadTransfers(warehouse.id),
+      loadOperators(profile.company_id),
+      loadProducts(profile.company_id),
+    ]);
+  };
+
   const loadTransfers = async (warehouseId: string) => {
     try {
+      // Hem giden (from) hem gelen (to) transferleri getir
+      // .or() filtresi ile iki durumu da kapsıyoruz
       const { data, error } = await supabase
         .from('warehouse_transfers')
         .select(`
@@ -134,10 +151,15 @@ export default function TransferManagement() {
           product:company_materials(id, name, unit),
           requester:profiles!requested_by(full_name)
         `)
-        .eq('from_warehouse_id', warehouseId)
+        .or(`from_warehouse_id.eq.${warehouseId},to_warehouse_id.eq.${warehouseId}`)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Transfer listesi çekilemedi:', error);
+        throw error;
+      }
+
+      console.log('Çekilen transfer sayısı:', data?.length || 0);
 
       const formattedTransfers = (data || []).map((t: any) => ({
         id: t.id,
@@ -155,6 +177,7 @@ export default function TransferManagement() {
       setTransfers(formattedTransfers);
     } catch (error: any) {
       console.error('Load transfers error:', error);
+      Alert.alert('Hata', 'Transfer listesi yüklenirken hata oluştu');
     }
   };
 
@@ -211,6 +234,19 @@ export default function TransferManagement() {
     }
   };
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (mainWarehouseId) {
+        await loadTransfers(mainWarehouseId);
+      } else {
+        await fetchInitialData();
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [mainWarehouseId]);
+
   const handleCreateTransfer = async () => {
     if (isSubmitting) return;
 
@@ -225,12 +261,8 @@ export default function TransferManagement() {
       return;
     }
 
-    // Operatör kontrolü
     const operator = operators.find(op => op.id === selectedOperator);
-    if (!operator) {
-      Alert.alert('Hata', 'Seçilen operatör bilgisine ulaşılamadı.');
-      return;
-    }
+    if (!operator) return;
 
     // Company ID kontrolü
     if (!companyId) {
@@ -242,16 +274,34 @@ export default function TransferManagement() {
       setIsSubmitting(true);
       let targetWarehouseId = operator.warehouse_id;
 
-      // Eğer operatörün deposu yoksa oluştur
-      if (!targetWarehouseId) {
-        console.log('Operatör deposu oluşturuluyor...', { operatorId: operator.id, companyId });
+      // 1. Depo Kontrolü ve Düzeltme
+      if (targetWarehouseId) {
+        // Mevcut deponun company_id'sini kontrol et
+        // Eğer önceki hatalı koddan dolayı yanlış company_id varsa düzelt
+        const { data: currentWh } = await supabase
+            .from('warehouses')
+            .select('company_id')
+            .eq('id', targetWarehouseId)
+            .single();
         
+        if (currentWh && currentWh.company_id !== companyId) {
+            console.log('Depo sahipliği düzeltiliyor...', { old: currentWh.company_id, new: companyId });
+            const { error: fixError } = await supabase
+                .from('warehouses')
+                .update({ company_id: companyId })
+                .eq('id', targetWarehouseId);
+            
+            if (fixError) console.error('Depo düzeltme hatası:', fixError);
+        }
+      } else {
+        // Depo yoksa yeni oluştur
+        console.log('Yeni operatör deposu oluşturuluyor...');
         const { data: newWh, error: whError } = await supabase
           .from('warehouses')
           .insert({
             name: `${operator.full_name} Deposu`,
             warehouse_type: 'operator',
-            company_id: companyId, // Düzeltilmiş: user.id değil companyId
+            company_id: companyId, // DOĞRU ID
             operator_id: operator.id,
             location: 'Mobil',
             is_active: true
@@ -259,27 +309,15 @@ export default function TransferManagement() {
           .select('id')
           .single();
         
-        if (whError) {
-          console.error('Depo oluşturma hatası:', whError);
-          throw new Error(`Depo oluşturulamadı: ${whError.message}`);
-        }
-        
+        if (whError) throw new Error(`Depo oluşturulamadı: ${whError.message}`);
         targetWarehouseId = newWh.id;
         
-        // State güncelle
         setOperators(prev => prev.map(op => 
           op.id === operator.id ? { ...op, warehouse_id: newWh.id } : op
         ));
       }
 
-      console.log('Transfer başlatılıyor...', {
-        from: mainWarehouseId,
-        to: targetWarehouseId,
-        product: selectedProduct,
-        qty
-      });
-
-      // 1. ADIM: Transferi 'pending' olarak oluştur
+      // 2. Transfer Oluştur (Pending)
       const { data: transferData, error: insertError } = await supabase
         .from('warehouse_transfers')
         .insert({
@@ -294,14 +332,9 @@ export default function TransferManagement() {
         .select('id')
         .single();
 
-      if (insertError) {
-        console.error('Transfer insert hatası:', insertError);
-        throw insertError;
-      }
+      if (insertError) throw insertError;
 
-      console.log('Transfer oluşturuldu, onaylanıyor...', transferData.id);
-
-      // 2. ADIM: Transferi onayla
+      // 3. Transferi Onayla
       const { error: updateError } = await supabase
         .from('warehouse_transfers')
         .update({
@@ -311,24 +344,22 @@ export default function TransferManagement() {
         })
         .eq('id', transferData.id);
 
-      if (updateError) {
-        console.error('Transfer onay hatası:', updateError);
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
-      Alert.alert('Başarılı', 'Transfer başarıyla oluşturuldu.');
+      Alert.alert('Başarılı', 'Transfer oluşturuldu ve stoklar güncellendi');
       setModalVisible(false);
       resetForm();
-      loadTransfers(mainWarehouseId);
-
+      
+      // Listeyi hemen güncelle
+      if (mainWarehouseId) {
+        await loadTransfers(mainWarehouseId);
+      }
     } catch (error: any) {
-      console.error('Create transfer error FULL:', error);
+      console.error('Create transfer error:', error);
       if (error.message?.includes('yeterli stok')) {
         Alert.alert('Stok Yetersiz', 'Ana depoda yeterli stok bulunmuyor');
-      } else if (error.message?.includes('bulunamadı')) {
-        Alert.alert('Hata', 'İlgili kayıt bulunamadı: ' + error.message);
       } else {
-        Alert.alert('İşlem Başarısız', error.message || 'Bilinmeyen bir hata oluştu');
+        Alert.alert('Hata', error.message || 'Transfer oluşturulamadı');
       }
     } finally {
       setIsSubmitting(false);
@@ -348,15 +379,10 @@ export default function TransferManagement() {
 
       if (error) throw error;
 
-      Alert.alert('Başarılı', 'Transfer onaylandı ve stoklar güncellendi');
+      Alert.alert('Başarılı', 'Transfer onaylandı');
       loadTransfers(mainWarehouseId);
     } catch (error: any) {
-      console.error('Approve error:', error);
-      if (error.message?.includes('yeterli stok')) {
-        Alert.alert('Stok Yetersiz', 'Ana depoda yeterli stok bulunmuyor');
-      } else {
-        Alert.alert('Hata', error.message);
-      }
+      Alert.alert('Hata', error.message);
     }
   };
 
@@ -381,8 +407,6 @@ export default function TransferManagement() {
                 .eq('id', transfer.id);
 
               if (error) throw error;
-
-              Alert.alert('Başarılı', 'Transfer reddedildi');
               loadTransfers(mainWarehouseId);
             } catch (error: any) {
               Alert.alert('Hata', error.message);
@@ -442,7 +466,7 @@ export default function TransferManagement() {
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4caf50" />
-          <Text style={styles.loadingText}>Yükleniyor...</Text>
+          <Text style={styles.loadingText}>Veriler yükleniyor...</Text>
         </View>
       </View>
     );
@@ -463,7 +487,12 @@ export default function TransferManagement() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {transfers.map(transfer => (
           <View key={transfer.id} style={styles.card}>
             <View style={styles.cardHeader}>
@@ -530,8 +559,15 @@ export default function TransferManagement() {
             <Package size={64} color="#ccc" />
             <Text style={styles.emptyTitle}>Transfer Yok</Text>
             <Text style={styles.emptySubtitle}>
-              + butonuna basarak yeni transfer oluşturabilirsiniz
+              + butonuna basarak yeni transfer oluşturabilirsiniz.
             </Text>
+            <TouchableOpacity 
+                style={styles.refreshButton}
+                onPress={onRefresh}
+            >
+                <RefreshCw size={20} color="#4caf50" />
+                <Text style={styles.refreshButtonText}>Listeyi Yenile</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -805,6 +841,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 80,
+    gap: 16
   },
   emptyTitle: {
     fontSize: 18,
@@ -817,6 +854,19 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 8,
     textAlign: 'center',
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: '#e8f5e9',
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    color: '#4caf50',
+    fontWeight: '600',
+    fontSize: 14,
   },
   modalOverlay: {
     flex: 1,
