@@ -230,15 +230,14 @@ export default function TransferManagement() {
     try {
       // Eğer operatörün deposu yoksa oluştur
       if (!targetWarehouseId) {
-        // DİKKAT: warehouses.company_id, profiles.id (user id) referansı ister.
-        // Ancak elimizde şirket UUID'si var.
-        // Bu durumda operatör deposu oluştururken company_id olarak current user'ın ID'sini kullanıyoruz.
+        // DUZELTME: company_id olarak kullanıcının ID'sini değil, firmanın ID'sini (companyId) kullanıyoruz.
+        // Bu sayede RLS politikaları ve veri ilişkileri doğru çalışır.
         const { data: newWh, error: whError } = await supabase
           .from('warehouses')
           .insert({
             name: `${operator.full_name} Deposu`,
             warehouse_type: 'operator',
-            company_id: user?.id, 
+            company_id: companyId, // <-- user?.id yerine companyId kullanıldı
             operator_id: operator.id,
             location: 'Mobil',
             is_active: true
@@ -254,8 +253,7 @@ export default function TransferManagement() {
         ));
       }
 
-      // 1. ADIM: Transferi 'pending' (beklemede) olarak oluştur
-      // Bu adım kaydın oluşmasını sağlar ama henüz stok düşmez
+      // 1. ADIM: Transferi 'pending' olarak oluştur
       const { data: transferData, error: insertError } = await supabase
         .from('warehouse_transfers')
         .insert({
@@ -272,8 +270,7 @@ export default function TransferManagement() {
 
       if (insertError) throw insertError;
 
-      // 2. ADIM: Transferi 'approved' (onaylandı) durumuna çek
-      // Bu işlem veritabanındaki trigger'ı (tetikleyiciyi) çalıştırır ve stokları günceller
+      // 2. ADIM: Transferi onayla (Otomatik trigger stokları düşecek ve statüyü completed yapacak)
       const { error: updateError } = await supabase
         .from('warehouse_transfers')
         .update({
@@ -288,6 +285,7 @@ export default function TransferManagement() {
       Alert.alert('Başarılı', 'Transfer oluşturuldu ve stoklar güncellendi');
       setModalVisible(false);
       resetForm();
+      // Listeyi yenile
       loadTransfers(mainWarehouseId);
     } catch (error: any) {
       console.error('Create transfer error:', error);
